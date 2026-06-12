@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+
+# Claude Code local machine state
+.claude/settings.local.json
+
+# Generated Xcode project — Switchback ships project.yml; run `xcodegen generate`
+Switchback.xcodeproj/
+
+# Xcode — user-specific state and build output
+build/
+dist/
+DerivedData/
+*.xcuserstate
+*.xcscmblueprint
+xcuserdata/
+*.moved-aside
+
+# Xcode build intermediates
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager (not used today, but harmless to ignore)
+.build/
+.swiftpm/
+
+# Misc
+*.log
