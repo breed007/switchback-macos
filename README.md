@@ -41,9 +41,11 @@ order or static-IP profile — that's a multi-step detour replaced by a single c
 
 ## Install
 
-### Option 1 — Homebrew (planned)
+### Option 1 — Homebrew (recommended)
 
 ```sh
+brew tap breed007/tap
+brew trust breed007/tap          # one-time — Homebrew requires trusting third-party taps
 brew install --cask switchback
 ```
 
