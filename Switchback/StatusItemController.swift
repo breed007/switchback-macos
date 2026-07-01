@@ -1,12 +1,15 @@
 import AppKit
 
 /// Owns the menu-bar status item and builds the location menu.
-final class StatusItemController {
+final class StatusItemController: NSObject, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let monitor = StatusMonitor()
     private let switcher: LocationSwitcher = AuthorizedSwitcher()
+    private let menu = NSMenu()
+    private var isBusy = false
 
-    init() {
+    override init() {
+        super.init()
         if let button = statusItem.button {
             let icon = NSImage(named: "MenuBarIcon")
             icon?.isTemplate = true   // recolor for light/dark menu bars
@@ -14,17 +17,29 @@ final class StatusItemController {
             icon?.accessibilityDescription = "Switchback"
             button.image = icon
         }
+        menu.delegate = self
+        statusItem.menu = menu
+        // Live updates while the menu is already open (e.g. an external switch).
         monitor.onChange = { [weak self] in
             DispatchQueue.main.async { self?.rebuildMenu() }
         }
         rebuildMenu()
     }
 
+    /// Refresh from live system state every time the menu is about to show. The
+    /// event subscription can miss an external location switch — the current-set
+    /// pointer isn't an `SCDynamicStore` key — so this is the reliable read.
+    func menuWillOpen(_ menu: NSMenu) {
+        monitor.reload()
+        rebuildMenu()
+    }
+
     private func rebuildMenu() {
-        let menu = NSMenu()
+        menu.removeAllItems()
 
         if monitor.locations.isEmpty {
             menu.addItem(disabled("No network locations found"))
+            menu.addItem(item(title: "New Location…", action: #selector(newLocation)))
         } else if monitor.locations.count == 1 {
             // A single "Automatic" location is the common default; show it, then
             // make creating a second one the obvious next step.
@@ -48,7 +63,6 @@ final class StatusItemController {
         menu.addItem(.separator())
         menu.addItem(item(title: "Network Settings…", action: #selector(openNetworkSettings)))
         menu.addItem(item(title: "Quit Switchback", action: #selector(quit), key: "q"))
-        statusItem.menu = menu
     }
 
     /// The "Manage Locations" submenu: rename any editable location, delete any
@@ -91,14 +105,14 @@ final class StatusItemController {
 
     @objc private func selectLocation(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
-        perform { try switcher.switchTo(locationID: id) }
+        perform { try self.switcher.switchTo(locationID: id) }
     }
 
     @objc private func newLocation() {
         guard let name = promptForName(title: "New Location",
                                        message: "Name for the new network location:",
                                        defaultValue: "") else { return }
-        perform { try switcher.createLocation(named: name) }
+        perform { try self.switcher.createLocation(named: name) }
     }
 
     @objc private func renameLocation(_ sender: NSMenuItem) {
@@ -107,7 +121,7 @@ final class StatusItemController {
         guard let name = promptForName(title: "Rename Location",
                                        message: "New name for \u{201C}\(loc.name)\u{201D}:",
                                        defaultValue: loc.name) else { return }
-        perform { try switcher.renameLocation(locationID: id, to: name) }
+        perform { try self.switcher.renameLocation(locationID: id, to: name) }
     }
 
     @objc private func deleteLocation(_ sender: NSMenuItem) {
@@ -121,7 +135,7 @@ final class StatusItemController {
         confirm.addButton(withTitle: "Delete")
         confirm.addButton(withTitle: "Cancel")
         guard confirm.runModal() == .alertFirstButtonReturn else { return }
-        perform { try switcher.deleteLocation(locationID: id) }
+        perform { try self.switcher.deleteLocation(locationID: id) }
     }
 
     @objc private func openNetworkSettings() {
@@ -134,15 +148,27 @@ final class StatusItemController {
 
     // MARK: - Helpers
 
-    /// Run a privileged operation, then refresh. Auth cancellation surfaces as a
-    /// thrown error from the backend; we treat a user cancel as a no-op, not a failure.
-    private func perform(_ work: () throws -> Void) {
-        do {
-            try work()
-            monitor.reload()
-            rebuildMenu()
-        } catch {
-            presentError(error)
+    /// Run a privileged operation off the main thread (so the menu bar doesn't
+    /// freeze while macOS applies the change), then refresh on the main thread.
+    /// A user cancelling the auth panel is a silent no-op, not an error. Re-entrant
+    /// calls while one is in flight are ignored.
+    private func perform(_ work: @escaping () throws -> Void) {
+        guard !isBusy else { return }
+        isBusy = true
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let result = Result(catching: work)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isBusy = false
+                switch result {
+                case .success:
+                    self.monitor.reload()
+                    self.rebuildMenu()
+                case .failure(let error):
+                    if let e = error as? LocationSwitcherError, case .cancelled = e { return }
+                    self.presentError(error)
+                }
+            }
         }
     }
 

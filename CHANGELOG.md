@@ -3,6 +3,29 @@
 All notable changes to Switchback are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.1.1] — 2026-07-01
+
+### Fixed
+- **Cancelling the macOS auth panel is now a silent no-op** instead of popping a
+  "couldn't complete that change" error — for switch, create, rename, and delete.
+- **The menu reads live system state every time it opens**, so an external
+  location switch (System Settings, `scselect`) is always reflected. The previous
+  event-only refresh could miss switches between locations with matching IP config,
+  because the current-set pointer isn't an `SCDynamicStore` key.
+- **Privileged changes run off the main thread**, so the menu bar no longer freezes
+  while macOS applies a location switch.
+
+### Changed
+- Location names are sanitized: control characters and embedded newlines are
+  stripped and length is capped at 128, so a pasted block of text can't become a
+  location name.
+- Deleting a location is guarded by identity, not just name — the current location
+  and the last remaining location can't be deleted, each with a clear message.
+- Creating a location that would end up with zero services now fails cleanly
+  instead of producing an empty, non-functional location.
+- The empty-state menu now offers **New Location…**, and re-entrant privileged
+  actions are ignored while one is already in flight.
+
 ## [0.1.0] — 2026-06-12
 
 First public release.
