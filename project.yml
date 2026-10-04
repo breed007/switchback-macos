@@ -26,6 +26,9 @@ targets:
           copyFiles:
             destination: wrapper
             subpath: Contents/Library/LaunchDaemons
+    scheme:
+      testTargets:
+        - SwitchbackTests
     dependencies:
       # The helper binary ships at Contents/MacOS/SwitchbackHelper.
       - target: SwitchbackHelper
@@ -63,3 +66,17 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         SKIP_INSTALL: YES
         CODE_SIGN_STYLE: Automatic
+
+  # Unit tests for pure logic. The source under test is compiled straight into the
+  # bundle, so there's no host app (it would start the menu-bar agent) and no
+  # privileges needed.
+  SwitchbackTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+      - path: Switchback/LocationNameValidator.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.breed007.switchback.tests
+        GENERATE_INFOPLIST_FILE: YES

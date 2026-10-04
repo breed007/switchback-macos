@@ -1,9 +1,12 @@
 import Foundation
 import SystemConfiguration
 
-/// Event-driven, unprivileged reader of network locations. Subscribes to
-/// `SCDynamicStore` and refreshes the model only when state actually changes
-/// (no polling). Mirrors Crossbar's `StatusMonitor`.
+/// Unprivileged reader of network locations. The status item calls `reload()`
+/// each time the menu opens; that read is the source of truth. The current-set
+/// pointer lives in the preferences plist (`CurrentSet`) and is not an
+/// `SCDynamicStore` key, so the subscription below can't see every switch. It's
+/// kept only for live updates while the menu is open (no polling).
+/// Mirrors Crossbar's `StatusMonitor`.
 final class StatusMonitor {
     private(set) var locations: [NetworkLocation] = []
     var onChange: (() -> Void)?
@@ -45,8 +48,11 @@ final class StatusMonitor {
         }
 
         guard let store = SCDynamicStoreCreate(nil, "Switchback" as CFString, callback, &context) else { return }
-        // The current set lives under Setup:/ ; watch it for switches made elsewhere too.
-        let keys = ["Setup:/" as CFString, "Setup:/Network/Global/IPv4" as CFString]
+        // A switch usually changes the global IPv4 setup and state, so these catch
+        // most switches made elsewhere. Not all: two locations with the same IPv4
+        // setup produce no change here, which is why menuWillOpen re-reads.
+        let keys = ["Setup:/Network/Global/IPv4" as CFString,
+                    "State:/Network/Global/IPv4" as CFString]
         SCDynamicStoreSetNotificationKeys(store, keys as CFArray, nil)
         if let src = SCDynamicStoreCreateRunLoopSource(nil, store, 0) {
             CFRunLoopAddSource(CFRunLoopGetCurrent(), src, .commonModes)

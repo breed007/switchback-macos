@@ -20,7 +20,7 @@ protocol LocationSwitcher {
 }
 
 enum LocationSwitcherError: Error, CustomStringConvertible {
-    case cancelled
+    case canceled
     case authorizationFailed
     case preferencesUnavailable
     case setNotFound
@@ -30,13 +30,14 @@ enum LocationSwitcherError: Error, CustomStringConvertible {
     case duplicateName
     case emptyName
     case nameTooLong
+    case reservedName
     case protectedLocation
     case cannotDeleteCurrent
     case cannotDeleteLast
 
     var description: String {
         switch self {
-        case .cancelled:            return "Cancelled."
+        case .canceled:             return "Canceled."
         case .authorizationFailed:  return "Authorization was not granted."
         case .preferencesUnavailable: return "Could not open network preferences."
         case .setNotFound:          return "That location no longer exists."
@@ -46,6 +47,7 @@ enum LocationSwitcherError: Error, CustomStringConvertible {
         case .duplicateName:        return "A location with that name already exists."
         case .emptyName:            return "Please enter a location name."
         case .nameTooLong:          return "That name is too long (128 characters max)."
+        case .reservedName:         return "\u{201C}Automatic\u{201D} is reserved for the macOS default location."
         case .protectedLocation:    return "The \u{201C}Automatic\u{201D} location can\u{2019}t be renamed or deleted."
         case .cannotDeleteCurrent:  return "You can\u{2019}t delete the location you\u{2019}re using. Switch to another first."
         case .cannotDeleteLast:     return "You can\u{2019}t delete your only location."

@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 
 /// Owns the menu-bar status item and builds the location menu.
 final class StatusItemController: NSObject, NSMenuDelegate {
@@ -65,6 +66,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         if !HelperClient.isEnabled {
             menu.addItem(item(title: "Set Up Passwordless Switching…", action: #selector(setUpHelper)))
         }
+        let login = item(title: LoginItem.requiresApproval ? "Launch at Login (Needs Approval)" : "Launch at Login",
+                         action: #selector(toggleLaunchAtLogin))
+        login.state = LoginItem.isEnabled ? .on : (LoginItem.requiresApproval ? .mixed : .off)
+        menu.addItem(login)
         menu.addItem(item(title: "Quit Switchback", action: #selector(quit), key: "q"))
     }
 
@@ -168,6 +173,23 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         }
     }
 
+    /// Launch at Login on/off. If macOS wants approval first, send the user to the
+    /// Login Items settings instead of failing silently.
+    @objc private func toggleLaunchAtLogin() {
+        if LoginItem.requiresApproval {
+            SMAppService.openSystemSettingsLoginItems()
+            return
+        }
+        do {
+            try LoginItem.setEnabled(!LoginItem.isEnabled)
+        } catch {
+            presentError(error)
+        }
+        if LoginItem.requiresApproval {
+            SMAppService.openSystemSettingsLoginItems()
+        }
+    }
+
     @objc private func openNetworkSettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.Network-Settings.extension") {
             NSWorkspace.shared.open(url)
@@ -195,14 +217,14 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                     self.monitor.reload()
                     self.rebuildMenu()
                 case .failure(let error):
-                    if let e = error as? LocationSwitcherError, case .cancelled = e { return }
+                    if let e = error as? LocationSwitcherError, case .canceled = e { return }
                     self.presentError(error)
                 }
             }
         }
     }
 
-    /// Modal text prompt. Returns the entered string, or nil if the user cancelled.
+    /// Modal text prompt. Returns the entered string, or nil if the user canceled.
     private func promptForName(title: String, message: String, defaultValue: String) -> String? {
         // A menu-bar agent isn't active by default; without this the modal can
         // appear unfocused or behind other windows.

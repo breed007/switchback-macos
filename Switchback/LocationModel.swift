@@ -9,6 +9,6 @@ struct NetworkLocation: Identifiable, Equatable {
     /// The default "Automatic" location is special — it carries every detected
     /// service and is the system fallback, so Switchback won't rename or delete it.
     var isProtected: Bool {
-        name.compare("Automatic", options: .caseInsensitive) == .orderedSame
+        LocationNameValidator.isReserved(name)
     }
 }

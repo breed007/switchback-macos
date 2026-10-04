@@ -12,10 +12,20 @@ import SystemConfiguration
 ///   --helper-unregister        remove it
 ///   --helper-switch <setID>    switch through the helper
 ///   --helper-selftest          no-op switch to the current set, then an unknown set
+///   --login-item [on|off]      print, or set, Launch at Login
 enum DebugCommands {
     /// Returns an exit code if a debug flag was handled, or nil to launch normally.
     static func run(_ args: [String]) -> Int32? {
-        guard args.count >= 2, args[1].hasPrefix("--helper-") else { return nil }
+        guard args.count >= 2 else { return nil }
+        if args[1] == "--login-item" {
+            if args.count >= 3 {
+                let on = args[2] == "on"
+                if !attemptLogin(on ? "enable" : "disable", { try LoginItem.setEnabled(on) }) { return 1 }
+            }
+            print("launch at login: \(LoginItem.status.label)")
+            return 0
+        }
+        guard args[1].hasPrefix("--helper-") else { return nil }
 
         switch args[1] {
         case "--helper-status":
@@ -64,6 +74,10 @@ enum DebugCommands {
             print("FAIL: \(label): \(error) (status \(HelperClient.status.label))")
             return 1
         }
+    }
+
+    private static func attemptLogin(_ label: String, _ work: () throws -> Void) -> Bool {
+        do { try work(); return true } catch { print("FAIL: \(label): \(error)"); return false }
     }
 
     private static func currentSetID() -> String? {

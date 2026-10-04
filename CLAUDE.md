@@ -56,6 +56,8 @@ then drive it from Terminal with the Debug-only flags:
 `--helper-selftest`). Read its audit log with
 `/usr/bin/log show --predicate 'subsystem == "com.breed007.switchback.helper"'`.
 In zsh, a bare `log` is a shell builtin and silently does nothing useful.
+Unit tests: `scripts/test.sh` (regenerates the project first; the tests need no
+privileges).
 
 ## Architecture
 

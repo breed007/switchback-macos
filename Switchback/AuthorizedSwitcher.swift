@@ -14,16 +14,6 @@ import Security
 /// the new network configuration.
 final class AuthorizedSwitcher: LocationSwitcher {
 
-    /// The default location is special: it carries every detected service and is
-    /// what the system falls back to. Renaming or deleting it can break networking,
-    /// so we refuse both. Compared case-insensitively against the set name.
-    private static let protectedName = "Automatic"
-
-    /// Upper bound on a location name. macOS tolerates long names, but an
-    /// unbounded paste (a signature block, a wall of text) makes an unusable menu
-    /// item and a name the `scselect` CLI chokes on.
-    private static let maxNameLength = 128
-
     // MARK: - LocationSwitcher
 
     func switchTo(locationID: String) throws {
@@ -37,11 +27,9 @@ final class AuthorizedSwitcher: LocationSwitcher {
 
     @discardableResult
     func createLocation(named rawName: String) throws -> String {
-        let name = try cleanName(rawName)
-
         var newID = ""
         try withAuthorizedPrefs { prefs in
-            guard !nameExists(name, in: prefs) else { throw LocationSwitcherError.duplicateName }
+            let name = try validatedName(rawName, in: prefs, excludingID: nil)
             guard let set = SCNetworkSetCreate(prefs) else { throw LocationSwitcherError.createFailed }
             guard SCNetworkSetSetName(set, name as CFString) else { throw LocationSwitcherError.createFailed }
             // Populate with one default service per attached interface, mirroring
@@ -56,19 +44,13 @@ final class AuthorizedSwitcher: LocationSwitcher {
     }
 
     func renameLocation(locationID: String, to rawName: String) throws {
-        let name = try cleanName(rawName)
-
         try withAuthorizedPrefs { prefs in
             guard let set = set(withID: locationID, in: prefs) else {
                 throw LocationSwitcherError.setNotFound
             }
             try guardNotProtected(set)
-            // Allow renaming a set to the same name (a no-op); reject collisions with others.
-            let current = SCNetworkSetGetName(set) as String?
-            if name.compare(current ?? "", options: .caseInsensitive) != .orderedSame,
-               nameExists(name, in: prefs) {
-                throw LocationSwitcherError.duplicateName
-            }
+            // Excluding this location's own ID allows a case-only rename.
+            let name = try validatedName(rawName, in: prefs, excludingID: locationID)
             guard SCNetworkSetSetName(set, name as CFString) else { throw LocationSwitcherError.commitFailed }
         }
     }
@@ -93,7 +75,7 @@ final class AuthorizedSwitcher: LocationSwitcher {
 
     /// Open authorized preferences, run `body`, then commit + apply. The single
     /// auth panel covers everything `body` mutates. `body` throws to abort before
-    /// commit. If the user declines the panel, this throws `.cancelled`.
+    /// commit. If the user declines the panel, this throws `.canceled`.
     private func withAuthorizedPrefs(_ body: (SCPreferences) throws -> Void) throws {
         var authRef: AuthorizationRef?
         let status = AuthorizationCreate(nil, nil,
@@ -101,7 +83,7 @@ final class AuthorizedSwitcher: LocationSwitcher {
                                          &authRef)
         guard status == errAuthorizationSuccess, let auth = authRef else {
             throw status == errAuthorizationCanceled
-                ? LocationSwitcherError.cancelled
+                ? LocationSwitcherError.canceled
                 : LocationSwitcherError.authorizationFailed
         }
         defer { AuthorizationFree(auth, [.destroyRights]) }
@@ -113,17 +95,17 @@ final class AuthorizedSwitcher: LocationSwitcher {
         try body(prefs)
 
         guard SCPreferencesCommitChanges(prefs) else {
-            throw wasAuthCancelled() ? LocationSwitcherError.cancelled : LocationSwitcherError.commitFailed
+            throw wasAuthCanceled() ? LocationSwitcherError.canceled : LocationSwitcherError.commitFailed
         }
         guard SCPreferencesApplyChanges(prefs) else {
-            throw wasAuthCancelled() ? LocationSwitcherError.cancelled : LocationSwitcherError.applyFailed
+            throw wasAuthCanceled() ? LocationSwitcherError.canceled : LocationSwitcherError.applyFailed
         }
     }
 
     /// When the user clicks Cancel on the auth panel, the commit fails with an
     /// access error rather than throwing — distinguish that from a real failure so
     /// the UI can treat a cancel as a silent no-op.
-    private func wasAuthCancelled() -> Bool {
+    private func wasAuthCanceled() -> Bool {
         SCError() == kSCStatusAccessError
     }
 
@@ -141,14 +123,22 @@ final class AuthorizedSwitcher: LocationSwitcher {
         return added
     }
 
-    /// Trim, strip control characters (including embedded newlines/tabs), and
-    /// bound the length. Throws `.emptyName` / `.nameTooLong` on rejection.
-    private func cleanName(_ raw: String) throws -> String {
-        let stripped = raw.components(separatedBy: .controlCharacters).joined(separator: " ")
-        let name = stripped.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { throw LocationSwitcherError.emptyName }
-        guard name.count <= Self.maxNameLength else { throw LocationSwitcherError.nameTooLong }
-        return name
+    /// Validate `raw` against the live locations (the authoritative check; the UI
+    /// checks too, but a location can appear between the dialog and the commit).
+    private func validatedName(_ raw: String, in prefs: SCPreferences, excludingID: String?) throws -> String {
+        let existing = ((SCNetworkSetCopyAll(prefs) as? [SCNetworkSet]) ?? []).compactMap { set -> LocationNameValidator.Existing? in
+            guard let id = SCNetworkSetGetSetID(set) as String?,
+                  let name = SCNetworkSetGetName(set) as String? else { return nil }
+            return LocationNameValidator.Existing(id: id, name: name)
+        }
+        let result = LocationNameValidator.validate(raw, existing: existing, excludingID: excludingID)
+        switch result.problem {
+        case nil:        return result.name
+        case .empty:     throw LocationSwitcherError.emptyName
+        case .tooLong:   throw LocationSwitcherError.nameTooLong
+        case .reserved:  throw LocationSwitcherError.reservedName
+        case .duplicate: throw LocationSwitcherError.duplicateName
+        }
     }
 
     private func set(withID id: String, in prefs: SCPreferences) -> SCNetworkSet? {
@@ -156,17 +146,8 @@ final class AuthorizedSwitcher: LocationSwitcher {
         return all.first { (SCNetworkSetGetSetID($0) as String?) == id }
     }
 
-    private func nameExists(_ name: String, in prefs: SCPreferences) -> Bool {
-        let all = (SCNetworkSetCopyAll(prefs) as? [SCNetworkSet]) ?? []
-        return all.contains { set in
-            guard let existing = SCNetworkSetGetName(set) as String? else { return false }
-            return existing.compare(name, options: .caseInsensitive) == .orderedSame
-        }
-    }
-
     private func guardNotProtected(_ set: SCNetworkSet) throws {
-        let name = SCNetworkSetGetName(set) as String? ?? ""
-        if name.compare(Self.protectedName, options: .caseInsensitive) == .orderedSame {
+        if LocationNameValidator.isReserved(SCNetworkSetGetName(set) as String? ?? "") {
             throw LocationSwitcherError.protectedLocation
         }
     }
