@@ -47,6 +47,16 @@ xcodebuild -project Switchback.xcodeproj -scheme Switchback -configuration Relea
 
 Then copy the built `Switchback.app` to `/Applications`.
 
+**Testing the privileged helper (v0.5).** The helper only accepts calls from a
+Switchback signed by team `YA83Q8FTH3`, so unsigned builds can't reach it. Use
+`scripts/dev-build.sh` (Debug, Developer ID signed, installs to `/Applications`),
+then drive it from Terminal with the Debug-only flags:
+`/Applications/Switchback.app/Contents/MacOS/Switchback --helper-status`
+(also `--helper-register`, `--helper-unregister`, `--helper-switch <setID>`,
+`--helper-selftest`). Read its audit log with
+`/usr/bin/log show --predicate 'subsystem == "com.breed007.switchback.helper"'`.
+In zsh, a bare `log` is a shell builtin and silently does nothing useful.
+
 ## Architecture
 
 Switchback is built around one fact, exactly like Crossbar:

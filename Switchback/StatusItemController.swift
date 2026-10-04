@@ -4,7 +4,7 @@ import AppKit
 final class StatusItemController: NSObject, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let monitor = StatusMonitor()
-    private let switcher: LocationSwitcher = AuthorizedSwitcher()
+    private let switcher: LocationSwitcher = SwitchRouter()
     private let menu = NSMenu()
     private var isBusy = false
 
@@ -62,6 +62,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
         menu.addItem(item(title: "Network Settings…", action: #selector(openNetworkSettings)))
+        if !HelperClient.isEnabled {
+            menu.addItem(item(title: "Set Up Passwordless Switching…", action: #selector(setUpHelper)))
+        }
         menu.addItem(item(title: "Quit Switchback", action: #selector(quit), key: "q"))
     }
 
@@ -136,6 +139,33 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         confirm.addButton(withTitle: "Cancel")
         guard confirm.runModal() == .alertFirstButtonReturn else { return }
         perform { try self.switcher.deleteLocation(locationID: id) }
+    }
+
+    /// Register the privileged helper, then send the user to approve it. The item
+    /// disappears from the menu once the helper is enabled.
+    @objc private func setUpHelper() {
+        if HelperClient.status == .requiresApproval {
+            HelperClient.openApprovalSettings()
+            return
+        }
+        do {
+            try HelperClient.register()
+        } catch {
+            presentError(error)
+            return
+        }
+        guard HelperClient.status == .requiresApproval else { return }
+
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.icon = NSApp.applicationIconImage
+        alert.messageText = "Approve Switchback\u{2019}s helper"
+        alert.informativeText = "To switch locations without a password, turn on Switchback under Login Items & Extensions in System Settings. This needs an administrator, once."
+        alert.addButton(withTitle: "Open System Settings")
+        alert.addButton(withTitle: "Later")
+        if alert.runModal() == .alertFirstButtonReturn {
+            HelperClient.openApprovalSettings()
+        }
     }
 
     @objc private func openNetworkSettings() {

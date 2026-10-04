@@ -19,6 +19,19 @@ targets:
     platform: macOS
     sources:
       - path: Switchback
+      - path: Shared
+      # The helper's launchd plist, where SMAppService.daemon(plistName:) looks for it.
+      - path: Helper/com.breed007.switchback.helper.plist
+        buildPhase:
+          copyFiles:
+            destination: wrapper
+            subpath: Contents/Library/LaunchDaemons
+    dependencies:
+      # The helper binary ships at Contents/MacOS/SwitchbackHelper.
+      - target: SwitchbackHelper
+        embed: true
+        copy:
+          destination: executables
     settings:
       base:
         PRODUCT_NAME: Switchback
@@ -31,3 +44,22 @@ targets:
     # NOTE: Switchback is intentionally NOT sandboxed — the privileged
     # SCPreferences commit (location switch) cannot run inside the App Sandbox.
     # Distribution is GitHub + Homebrew, not the Mac App Store.
+
+  # Privileged helper: a root LaunchDaemon registered through SMAppService. It can
+  # only switch to an existing location. See docs/v0.5-spec.md (F1).
+  SwitchbackHelper:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Helper/main.swift
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_NAME: SwitchbackHelper
+        PRODUCT_BUNDLE_IDENTIFIER: com.breed007.switchback.helper
+        INFOPLIST_FILE: Helper/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CREATE_INFOPLIST_SECTION_IN_BINARY: YES   # gives the tool a signing identifier
+        ENABLE_HARDENED_RUNTIME: YES
+        SKIP_INSTALL: YES
+        CODE_SIGN_STYLE: Automatic
