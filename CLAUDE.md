@@ -26,7 +26,9 @@ overlap — see non-goals.
 
 ## Status
 
-Pre-1.0. Greenfield. Mirror Crossbar's structure and conventions where possible.
+Pre-1.0. v0.1.1 shipped 2026-07-01. **v0.5 is planned in
+[docs/v0.5-spec.md](docs/v0.5-spec.md); read it before starting v0.5 work.** Mirror
+Crossbar's structure and conventions where possible.
 
 ## Tech stack
 
@@ -57,9 +59,12 @@ Those two halves are separated by a clean privilege boundary.
 - Enumerate locations with `SCNetworkSetCopyAll`; name each via `SCNetworkSetGetName`.
 - Identify the active location with `SCNetworkSetCopyCurrent` →
   `SCNetworkSetGetSetID` / name, to render the checkmark.
-- Stay **event-driven** (no polling): subscribe via `SCDynamicStore` to changes in
-  `Setup:/` (the current set changes there) and refresh the model when state actually
-  changes. Follow Crossbar's `StatusMonitor` pattern.
+- Re-read on `menuWillOpen`. That read is the source of truth, because the
+  current-set pointer lives in the preferences plist (`CurrentSet`) and is **not** an
+  `SCDynamicStore` key; `Setup:/` matches nothing, so a dynamic-store subscription
+  alone misses external switches between locations with the same IP setup. Keep the
+  `SCDynamicStore` subscription (no polling) only for live updates while the menu is
+  open. Follow Crossbar's `StatusMonitor` pattern.
 
 ### Write layer (privileged) — the seam
 
@@ -76,6 +81,11 @@ without touching the interface.
 - The commit triggers the **native macOS "is trying to make changes" auth panel** —
   no sudoers rule, no `/etc/sudoers.d` setup step. This is the documented Apple path
   and is a genuine upgrade over Crossbar's v1 sudoers backend.
+- Gotcha: **this prompts for an admin password on every commit.** The right
+  (`system.services.systemconfiguration.network`) resolves to
+  `authenticate-admin-nonshared` (not shared, 30 s timeout) and each operation frees
+  its authorization. Standard users can't switch on this path without an admin's
+  credentials. v0.5 adds a root helper for switching; see the spec.
 - Create/rename/delete locations (`SCNetworkSetCreate`, `SCNetworkSetSetName`,
   `SCNetworkSetRemove`) are also privileged commits through this same backend.
 
