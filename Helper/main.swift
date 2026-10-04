@@ -31,15 +31,15 @@ private func scheduleIdleExit() {
 /// Make `setID` the current location. Returns nil on success or an error code.
 private func switchTo(setID: String) -> String? {
     guard let prefs = SCPreferencesCreate(nil, HelperConstants.helperBundleID as CFString, nil) else {
-        return "open-prefs-failed"
+        return HelperConstants.ErrorCode.openPrefsFailed
     }
     let sets = (SCNetworkSetCopyAll(prefs) as? [SCNetworkSet]) ?? []
     guard let target = sets.first(where: { (SCNetworkSetGetSetID($0) as String?) == setID }) else {
-        return "unknown-set"
+        return HelperConstants.ErrorCode.unknownSet
     }
-    guard SCNetworkSetSetCurrent(target) else { return "commit-failed" }
-    guard SCPreferencesCommitChanges(prefs) else { return "commit-failed" }
-    guard SCPreferencesApplyChanges(prefs) else { return "apply-failed" }
+    guard SCNetworkSetSetCurrent(target) else { return HelperConstants.ErrorCode.commitFailed }
+    guard SCPreferencesCommitChanges(prefs) else { return HelperConstants.ErrorCode.commitFailed }
+    guard SCPreferencesApplyChanges(prefs) else { return HelperConstants.ErrorCode.applyFailed }
     return nil
 }
 
@@ -64,16 +64,24 @@ private func handle(_ message: xpc_object_t, from peer: xpc_connection_t) {
     guard let op = xpc_dictionary_get_string(message, HelperConstants.Key.op).map({ String(cString: $0) }),
           op == HelperConstants.opSwitchTo else {
         log.error("uid \(uid, privacy: .public): rejected unknown op")
-        return send("unknown-op")
+        return send(HelperConstants.ErrorCode.unknownOp)
     }
-    guard let setID = xpc_dictionary_get_string(message, HelperConstants.Key.setID).map({ String(cString: $0) }) else {
-        return send("unknown-set")
+    guard let setID = xpc_dictionary_get_string(message, HelperConstants.Key.setID).map({ String(cString: $0) }),
+          HelperConstants.isWellFormedSetID(setID) else {
+        log.error("uid \(uid, privacy: .public): refused a malformed set ID")
+        return send(HelperConstants.ErrorCode.unknownSet)
     }
 
     // Set IDs are opaque GUIDs and logged in the clear; location names (which can
     // name clients) are never logged.
+    // Policy: anyone may switch unless IT set RequireAdminToSwitch. Admin
+    // membership is only looked up when the policy is on.
+    let requireAdmin = HelperPolicy.requireAdminToSwitch()
+    let allowed = HelperPolicy.allows(requireAdmin: requireAdmin,
+                                      callerIsAdmin: requireAdmin && HelperPolicy.isAdmin(uid: uid))
+
     let fromID = currentSetID()
-    let result = switchTo(setID: setID)
+    let result = allowed ? switchTo(setID: setID) : HelperConstants.ErrorCode.policyDenied
     log.notice("uid \(uid, privacy: .public) switch \(fromID, privacy: .public) -> \(setID, privacy: .public): \(result ?? "ok", privacy: .public)")
     send(result)
 }

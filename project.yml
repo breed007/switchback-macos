@@ -67,15 +67,21 @@ targets:
         SKIP_INSTALL: YES
         CODE_SIGN_STYLE: Automatic
 
-  # Unit tests for pure logic. The source under test is compiled straight into the
-  # bundle, so there's no host app (it would start the menu-bar agent) and no
-  # privileges needed.
+  # Unit tests. The app's sources are compiled straight into the bundle (minus its
+  # entry point and resources), so there's no host app (it would start the
+  # menu-bar agent) and no privileges needed.
   SwitchbackTests:
     type: bundle.unit-test
     platform: macOS
     sources:
       - path: Tests
-      - path: Switchback/LocationNameValidator.swift
+      - path: Shared
+      - path: Switchback
+        excludes:
+          - main.swift
+          - DebugCommands.swift
+          - Info.plist
+          - Assets.xcassets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.breed007.switchback.tests

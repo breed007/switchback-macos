@@ -10,22 +10,15 @@ import SystemConfiguration
 ///   --helper-status            print the SMAppService status
 ///   --helper-register          register the helper (then approve in System Settings)
 ///   --helper-unregister        remove it
-///   --helper-switch <setID>    switch through the helper
+///   --helper-switch <setID>    switch through the helper only
 ///   --helper-selftest          no-op switch to the current set, then an unknown set
+///   --switch <setID>           switch through SwitchRouter (helper, else admin prompt)
+///   --policy                   print the managed policy and whether you're an admin
 ///   --login-item [on|off]      print, or set, Launch at Login
 enum DebugCommands {
     /// Returns an exit code if a debug flag was handled, or nil to launch normally.
     static func run(_ args: [String]) -> Int32? {
-        guard args.count >= 2 else { return nil }
-        if args[1] == "--login-item" {
-            if args.count >= 3 {
-                let on = args[2] == "on"
-                if !attemptLogin(on ? "enable" : "disable", { try LoginItem.setEnabled(on) }) { return 1 }
-            }
-            print("launch at login: \(LoginItem.status.label)")
-            return 0
-        }
-        guard args[1].hasPrefix("--helper-") else { return nil }
+        guard args.count >= 2, args[1].hasPrefix("--") else { return nil }
 
         switch args[1] {
         case "--helper-status":
@@ -40,44 +33,81 @@ enum DebugCommands {
 
         case "--helper-switch":
             guard args.count >= 3 else { print("usage: --helper-switch <setID>"); return 64 }
-            return attempt("switch to \(args[2])") { try HelperClient.switchTo(setID: args[2]) }
+            return attempt("helper switch to \(args[2])") {
+                try blocking { try await HelperClient.switchTo(setID: args[2]) }
+            }
+
+        case "--switch":
+            guard args.count >= 3 else { print("usage: --switch <setID>"); return 64 }
+            return attempt("routed switch to \(args[2])") {
+                try blocking { try await SwitchRouter().switchTo(locationID: args[2]) }
+            }
 
         case "--helper-selftest":
-            guard let current = currentSetID() else { print("FAIL: can't read current set"); return 1 }
-            let noOp = attempt("no-op switch to current set \(current)") {
-                try HelperClient.switchTo(setID: current)
+            return selfTest()
+
+        case "--policy":
+            let requireAdmin = HelperPolicy.requireAdminToSwitch()
+            let admin = HelperPolicy.isAdmin(uid: getuid())
+            print("RequireAdminToSwitch: \(requireAdmin) (\(HelperPolicy.managedPreferencesPath))")
+            print("uid \(getuid()) is admin: \(admin)")
+            print("helper would \(HelperPolicy.allows(requireAdmin: requireAdmin, callerIsAdmin: admin) ? "allow" : "refuse") a switch from this user")
+            return 0
+
+        case "--login-item":
+            if args.count >= 3 {
+                let on = args[2] == "on"
+                guard attempt(on ? "enable launch at login" : "disable launch at login",
+                              { try LoginItem.setEnabled(on) }) == 0 else { return 1 }
             }
-            var unknownOK = false
-            do {
-                try HelperClient.switchTo(setID: "00000000-0000-0000-0000-000000000000")
-                print("FAIL: unknown set was accepted")
-            } catch HelperError.helperReported(let code) where code == "unknown-set" {
-                print("ok: unknown set rejected with unknown-set")
-                unknownOK = true
-            } catch {
-                print("FAIL: unknown set: \(error)")
-            }
-            return (noOp == 0 && unknownOK) ? 0 : 1
+            print("launch at login: \(LoginItem.status.label)")
+            return 0
 
         default:
-            print("unknown flag \(args[1])")
-            return 64
+            return nil   // not ours; launch normally
         }
+    }
+
+    private static func selfTest() -> Int32 {
+        guard let current = currentSetID() else { print("FAIL: can't read current set"); return 1 }
+        let noOp = attempt("no-op switch to current set \(current)") {
+            try blocking { try await HelperClient.switchTo(setID: current) }
+        }
+        var unknownOK = false
+        do {
+            try blocking { try await HelperClient.switchTo(setID: "00000000-0000-0000-0000-000000000000") }
+            print("FAIL: unknown set was accepted")
+        } catch HelperError.helperReported(let code) where code == HelperConstants.ErrorCode.unknownSet {
+            print("ok: unknown set rejected with \(code)")
+            unknownOK = true
+        } catch {
+            print("FAIL: unknown set: \(error)")
+        }
+        return (noOp == 0 && unknownOK) ? 0 : 1
     }
 
     private static func attempt(_ label: String, _ work: () throws -> Void) -> Int32 {
         do {
             try work()
-            print("ok: \(label) (status now \(HelperClient.status.label))")
+            print("ok: \(label) (helper \(HelperClient.status.label))")
             return 0
         } catch {
-            print("FAIL: \(label): \(error) (status \(HelperClient.status.label))")
+            print("FAIL: \(label): \(error) (helper \(HelperClient.status.label))")
             return 1
         }
     }
 
-    private static func attemptLogin(_ label: String, _ work: () throws -> Void) -> Bool {
-        do { try work(); return true } catch { print("FAIL: \(label): \(error)"); return false }
+    /// Run async work to completion from this synchronous, pre-AppKit context.
+    private static func blocking(_ work: @escaping () async throws -> Void) throws {
+        final class Box: @unchecked Sendable { var error: Error? }
+        let box = Box()
+        let done = DispatchSemaphore(value: 0)
+        Task.detached {
+            do { try await work() } catch { box.error = error }
+            done.signal()
+        }
+        done.wait()
+        if let error = box.error { throw error }
     }
 
     private static func currentSetID() -> String? {

@@ -5,18 +5,18 @@ import Foundation
 /// without touching the interface. Mirrors Crossbar's `PrivilegedToggle`.
 protocol LocationSwitcher {
     /// Switch the current network location to the set with the given ID.
-    func switchTo(locationID: String) throws
+    func switchTo(locationID: String) async throws
 
     /// Create a new location, populated with the system's default services
     /// (one per attached interface), and return its new set ID.
     @discardableResult
-    func createLocation(named name: String) throws -> String
+    func createLocation(named name: String) async throws -> String
 
     /// Rename the location with the given ID.
-    func renameLocation(locationID: String, to name: String) throws
+    func renameLocation(locationID: String, to name: String) async throws
 
     /// Delete the location with the given ID.
-    func deleteLocation(locationID: String) throws
+    func deleteLocation(locationID: String) async throws
 }
 
 enum LocationSwitcherError: Error, CustomStringConvertible {

@@ -63,7 +63,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
         menu.addItem(item(title: "Network Settings…", action: #selector(openNetworkSettings)))
-        if !HelperClient.isEnabled {
+        switch HelperClient.status {
+        case .enabled:
+            break
+        case .requiresApproval:
+            menu.addItem(item(title: "Approve Passwordless Switching…", action: #selector(setUpHelper)))
+        default:
             menu.addItem(item(title: "Set Up Passwordless Switching…", action: #selector(setUpHelper)))
         }
         let login = item(title: LoginItem.requiresApproval ? "Launch at Login (Needs Approval)" : "Launch at Login",
@@ -113,14 +118,14 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     @objc private func selectLocation(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
-        perform { try self.switcher.switchTo(locationID: id) }
+        perform { try await self.switcher.switchTo(locationID: id) }
     }
 
     @objc private func newLocation() {
         guard let name = promptForName(title: "New Location",
                                        message: "Name for the new network location:",
                                        defaultValue: "") else { return }
-        perform { try self.switcher.createLocation(named: name) }
+        perform { try await self.switcher.createLocation(named: name) }
     }
 
     @objc private func renameLocation(_ sender: NSMenuItem) {
@@ -129,7 +134,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         guard let name = promptForName(title: "Rename Location",
                                        message: "New name for \u{201C}\(loc.name)\u{201D}:",
                                        defaultValue: loc.name) else { return }
-        perform { try self.switcher.renameLocation(locationID: id, to: name) }
+        perform { try await self.switcher.renameLocation(locationID: id, to: name) }
     }
 
     @objc private func deleteLocation(_ sender: NSMenuItem) {
@@ -143,7 +148,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         confirm.addButton(withTitle: "Delete")
         confirm.addButton(withTitle: "Cancel")
         guard confirm.runModal() == .alertFirstButtonReturn else { return }
-        perform { try self.switcher.deleteLocation(locationID: id) }
+        perform { try await self.switcher.deleteLocation(locationID: id) }
     }
 
     /// Register the privileged helper, then send the user to approve it. The item
@@ -200,26 +205,23 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     // MARK: - Helpers
 
-    /// Run a privileged operation off the main thread (so the menu bar doesn't
-    /// freeze while macOS applies the change), then refresh on the main thread.
-    /// A user cancelling the auth panel is a silent no-op, not an error. Re-entrant
-    /// calls while one is in flight are ignored.
-    private func perform(_ work: @escaping () throws -> Void) {
+    /// Run a privileged operation, then refresh. The work is async (the helper
+    /// replies over XPC; the admin-prompt backend runs on its own queue), so the
+    /// menu bar never blocks. A user canceling the auth panel is a silent no-op,
+    /// not an error. Re-entrant calls while one is in flight are ignored.
+    private func perform(_ work: @escaping () async throws -> Void) {
         guard !isBusy else { return }
         isBusy = true
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let result = Result(catching: work)
-            DispatchQueue.main.async {
-                guard let self else { return }
-                self.isBusy = false
-                switch result {
-                case .success:
-                    self.monitor.reload()
-                    self.rebuildMenu()
-                case .failure(let error):
-                    if let e = error as? LocationSwitcherError, case .canceled = e { return }
-                    self.presentError(error)
-                }
+        Task { @MainActor in
+            do {
+                try await work()
+                isBusy = false
+                monitor.reload()
+                rebuildMenu()
+            } catch {
+                isBusy = false
+                if let e = error as? LocationSwitcherError, case .canceled = e { return }
+                presentError(error)
             }
         }
     }

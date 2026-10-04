@@ -1,32 +1,48 @@
 import Foundation
+import os
 
 /// Sends switches through the privileged helper when it's enabled, so they need no
-/// password. Creating, renaming, and deleting always use the admin-authorized
-/// backend, because they change configuration.
-///
-/// Spike version: helper errors surface as-is rather than falling back to the admin
-/// prompt, so failures are visible. Fallback and policy land in milestone 3.
+/// password. If the helper can't be reached, refuses by policy, or is too old to
+/// know the request, the switch falls back to the admin prompt. Creating,
+/// renaming, and deleting always use the admin-authorized backend, because they
+/// change configuration.
 final class SwitchRouter: LocationSwitcher {
-    private let authorized = AuthorizedSwitcher()
+    private let authorized: LocationSwitcher
+    private let helperEnabled: () -> Bool
+    private let helperSwitch: (String) async throws -> Void
+    private let log = Logger(subsystem: HelperConstants.appBundleID, category: "router")
 
-    func switchTo(locationID: String) throws {
-        if HelperClient.isEnabled {
-            try HelperClient.switchTo(setID: locationID)
-        } else {
-            try authorized.switchTo(locationID: locationID)
+    /// The defaults are the real backends; tests inject fakes.
+    init(authorized: LocationSwitcher = AuthorizedSwitcher(),
+         helperEnabled: @escaping () -> Bool = { HelperClient.isEnabled },
+         helperSwitch: @escaping (String) async throws -> Void = { try await HelperClient.switchTo(setID: $0) }) {
+        self.authorized = authorized
+        self.helperEnabled = helperEnabled
+        self.helperSwitch = helperSwitch
+    }
+
+    func switchTo(locationID: String) async throws {
+        guard helperEnabled() else {
+            return try await authorized.switchTo(locationID: locationID)
+        }
+        do {
+            try await helperSwitch(locationID)
+        } catch let error as HelperError where error.allowsFallback {
+            log.notice("helper didn't switch (\(error.description, privacy: .public)); using the admin prompt")
+            try await authorized.switchTo(locationID: locationID)
         }
     }
 
     @discardableResult
-    func createLocation(named name: String) throws -> String {
-        try authorized.createLocation(named: name)
+    func createLocation(named name: String) async throws -> String {
+        try await authorized.createLocation(named: name)
     }
 
-    func renameLocation(locationID: String, to name: String) throws {
-        try authorized.renameLocation(locationID: locationID, to: name)
+    func renameLocation(locationID: String, to name: String) async throws {
+        try await authorized.renameLocation(locationID: locationID, to: name)
     }
 
-    func deleteLocation(locationID: String) throws {
-        try authorized.deleteLocation(locationID: locationID)
+    func deleteLocation(locationID: String) async throws {
+        try await authorized.deleteLocation(locationID: locationID)
     }
 }

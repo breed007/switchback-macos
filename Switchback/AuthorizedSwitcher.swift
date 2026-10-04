@@ -9,65 +9,81 @@ import Security
 /// Switching, creating, renaming and deleting locations are all privileged
 /// commits through this same authorized-preferences path.
 ///
-/// These methods run the privileged commit synchronously; callers should invoke
-/// them off the main thread so the menu-bar UI doesn't block while macOS applies
-/// the new network configuration.
+/// The commits block while the auth panel waits on the user (possibly for minutes),
+/// so they run on one serial queue rather than a Swift concurrency thread. Serial
+/// also means two privileged commits can never race.
 final class AuthorizedSwitcher: LocationSwitcher {
+
+    private let queue = DispatchQueue(label: "com.breed007.switchback.authorized")
+
+    private func serialized<T>(_ work: @escaping () throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async { continuation.resume(with: Result(catching: work)) }
+        }
+    }
 
     // MARK: - LocationSwitcher
 
-    func switchTo(locationID: String) throws {
-        try withAuthorizedPrefs { prefs in
-            guard let target = set(withID: locationID, in: prefs) else {
-                throw LocationSwitcherError.setNotFound
+    func switchTo(locationID: String) async throws {
+        try await serialized {
+            try self.withAuthorizedPrefs { prefs in
+                guard let target = self.set(withID: locationID, in: prefs) else {
+                    throw LocationSwitcherError.setNotFound
+                }
+                guard SCNetworkSetSetCurrent(target) else { throw LocationSwitcherError.commitFailed }
             }
-            guard SCNetworkSetSetCurrent(target) else { throw LocationSwitcherError.commitFailed }
         }
     }
 
     @discardableResult
-    func createLocation(named rawName: String) throws -> String {
-        var newID = ""
-        try withAuthorizedPrefs { prefs in
-            let name = try validatedName(rawName, in: prefs, excludingID: nil)
-            guard let set = SCNetworkSetCreate(prefs) else { throw LocationSwitcherError.createFailed }
-            guard SCNetworkSetSetName(set, name as CFString) else { throw LocationSwitcherError.createFailed }
-            // Populate with one default service per attached interface, mirroring
-            // `networksetup -createlocation … populate`. If nothing could be added
-            // the location would be an empty, non-functional set — refuse it.
-            guard populateDefaultServices(into: set, prefs: prefs) > 0 else {
-                throw LocationSwitcherError.createFailed
+    func createLocation(named rawName: String) async throws -> String {
+        try await serialized {
+            var newID = ""
+            try self.withAuthorizedPrefs { prefs in
+                let name = try self.validatedName(rawName, in: prefs, excludingID: nil)
+                guard let set = SCNetworkSetCreate(prefs) else { throw LocationSwitcherError.createFailed }
+                guard SCNetworkSetSetName(set, name as CFString) else { throw LocationSwitcherError.createFailed }
+                // Populate with one default service per attached interface, mirroring
+                // `networksetup -createlocation … populate`. If nothing could be added
+                // the location would be an empty, non-functional set, so refuse it.
+                guard self.populateDefaultServices(into: set, prefs: prefs) > 0 else {
+                    throw LocationSwitcherError.createFailed
+                }
+                newID = (SCNetworkSetGetSetID(set) as String?) ?? ""
             }
-            newID = (SCNetworkSetGetSetID(set) as String?) ?? ""
-        }
-        return newID
-    }
-
-    func renameLocation(locationID: String, to rawName: String) throws {
-        try withAuthorizedPrefs { prefs in
-            guard let set = set(withID: locationID, in: prefs) else {
-                throw LocationSwitcherError.setNotFound
-            }
-            try guardNotProtected(set)
-            // Excluding this location's own ID allows a case-only rename.
-            let name = try validatedName(rawName, in: prefs, excludingID: locationID)
-            guard SCNetworkSetSetName(set, name as CFString) else { throw LocationSwitcherError.commitFailed }
+            return newID
         }
     }
 
-    func deleteLocation(locationID: String) throws {
-        try withAuthorizedPrefs { prefs in
-            let all = (SCNetworkSetCopyAll(prefs) as? [SCNetworkSet]) ?? []
-            guard let set = all.first(where: { (SCNetworkSetGetSetID($0) as String?) == locationID }) else {
-                throw LocationSwitcherError.setNotFound
+    func renameLocation(locationID: String, to rawName: String) async throws {
+        try await serialized {
+            try self.withAuthorizedPrefs { prefs in
+                guard let set = self.set(withID: locationID, in: prefs) else {
+                    throw LocationSwitcherError.setNotFound
+                }
+                try self.guardNotProtected(set)
+                // Excluding this location's own ID allows a case-only rename.
+                let name = try self.validatedName(rawName, in: prefs, excludingID: locationID)
+                guard SCNetworkSetSetName(set, name as CFString) else { throw LocationSwitcherError.commitFailed }
             }
-            try guardNotProtected(set)
-            // Identity-based safety, independent of the name: never leave the system
-            // with zero sets, and never delete the set that's currently active.
-            guard all.count > 1 else { throw LocationSwitcherError.cannotDeleteLast }
-            let currentID = SCNetworkSetCopyCurrent(prefs).flatMap { SCNetworkSetGetSetID($0) as String? }
-            guard currentID != locationID else { throw LocationSwitcherError.cannotDeleteCurrent }
-            guard SCNetworkSetRemove(set) else { throw LocationSwitcherError.commitFailed }
+        }
+    }
+
+    func deleteLocation(locationID: String) async throws {
+        try await serialized {
+            try self.withAuthorizedPrefs { prefs in
+                let all = (SCNetworkSetCopyAll(prefs) as? [SCNetworkSet]) ?? []
+                guard let set = all.first(where: { (SCNetworkSetGetSetID($0) as String?) == locationID }) else {
+                    throw LocationSwitcherError.setNotFound
+                }
+                try self.guardNotProtected(set)
+                // Identity-based safety, independent of the name: never leave the system
+                // with zero sets, and never delete the set that's currently active.
+                guard all.count > 1 else { throw LocationSwitcherError.cannotDeleteLast }
+                let currentID = SCNetworkSetCopyCurrent(prefs).flatMap { SCNetworkSetGetSetID($0) as String? }
+                guard currentID != locationID else { throw LocationSwitcherError.cannotDeleteCurrent }
+                guard SCNetworkSetRemove(set) else { throw LocationSwitcherError.commitFailed }
+            }
         }
     }
 

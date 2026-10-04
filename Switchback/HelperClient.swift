@@ -1,6 +1,6 @@
 import Foundation
 import ServiceManagement
-import XPC
+@preconcurrency import XPC
 
 /// The app's side of SwitchbackHelper: registration through `SMAppService`, and
 /// the one XPC call.
@@ -39,36 +39,53 @@ enum HelperClient {
         SMAppService.openSystemSettingsLoginItems()
     }
 
-    /// Ask the helper to make `setID` the current location. Blocks until the
-    /// helper replies, so call it off the main thread.
-    static func switchTo(setID: String) throws {
-        let conn = xpc_connection_create_mach_service(HelperConstants.machServiceName, nil, 0)
-        _ = xpc_connection_set_peer_code_signing_requirement(conn, HelperConstants.helperRequirement)
-        xpc_connection_set_event_handler(conn) { _ in }   // required before resume
-        xpc_connection_resume(conn)
-        defer { xpc_connection_cancel(conn) }
+    /// Ask the helper to make `setID` the current location.
+    static func switchTo(setID: String) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let conn = xpc_connection_create_mach_service(HelperConstants.machServiceName, nil, 0)
+            _ = xpc_connection_set_peer_code_signing_requirement(conn, HelperConstants.helperRequirement)
+            xpc_connection_set_event_handler(conn) { _ in }   // required before resume
+            xpc_connection_resume(conn)
 
-        let message = xpc_dictionary_create(nil, nil, 0)
-        xpc_dictionary_set_string(message, HelperConstants.Key.op, HelperConstants.opSwitchTo)
-        xpc_dictionary_set_string(message, HelperConstants.Key.setID, setID)
-        let reply = xpc_connection_send_message_with_reply_sync(conn, message)
+            let message = xpc_dictionary_create(nil, nil, 0)
+            xpc_dictionary_set_string(message, HelperConstants.Key.op, HelperConstants.opSwitchTo)
+            xpc_dictionary_set_string(message, HelperConstants.Key.setID, setID)
 
-        if xpc_get_type(reply) == XPC_TYPE_ERROR {
-            let why = xpc_dictionary_get_string(reply, XPC_ERROR_KEY_DESCRIPTION)
-                .map { String(cString: $0) } ?? "connection error"
-            throw HelperError.communicationFailed(why)
-        }
-        guard xpc_dictionary_get_bool(reply, HelperConstants.Key.ok) else {
-            let code = xpc_dictionary_get_string(reply, HelperConstants.Key.error)
-                .map { String(cString: $0) } ?? "unknown"
-            throw HelperError.helperReported(code)
+            xpc_connection_send_message_with_reply(conn, message, DispatchQueue.global()) { reply in
+                defer { xpc_connection_cancel(conn) }
+                if xpc_get_type(reply) == XPC_TYPE_ERROR {
+                    let why = xpc_dictionary_get_string(reply, XPC_ERROR_KEY_DESCRIPTION)
+                        .map { String(cString: $0) } ?? "connection error"
+                    continuation.resume(throwing: HelperError.communicationFailed(why))
+                } else if xpc_dictionary_get_bool(reply, HelperConstants.Key.ok) {
+                    continuation.resume()
+                } else {
+                    let code = xpc_dictionary_get_string(reply, HelperConstants.Key.error)
+                        .map { String(cString: $0) } ?? "unknown"
+                    continuation.resume(throwing: HelperError.helperReported(code))
+                }
+            }
         }
     }
 }
 
-enum HelperError: Error, CustomStringConvertible {
+enum HelperError: Error, Equatable, CustomStringConvertible {
     case communicationFailed(String)
     case helperReported(String)
+
+    /// Whether the switch should be retried through the admin prompt. Yes when the
+    /// helper can't be reached, refuses by policy, or is too old to know the op.
+    /// No when the helper ran and the switch itself failed: an unknown location or
+    /// a failed commit would fail the same way through the prompt.
+    var allowsFallback: Bool {
+        switch self {
+        case .communicationFailed:
+            return true
+        case .helperReported(let code):
+            return code == HelperConstants.ErrorCode.policyDenied
+                || code == HelperConstants.ErrorCode.unknownOp
+        }
+    }
 
     var description: String {
         switch self {

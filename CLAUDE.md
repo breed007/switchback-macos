@@ -53,7 +53,9 @@ Switchback signed by team `YA83Q8FTH3`, so unsigned builds can't reach it. Use
 then drive it from Terminal with the Debug-only flags:
 `/Applications/Switchback.app/Contents/MacOS/Switchback --helper-status`
 (also `--helper-register`, `--helper-unregister`, `--helper-switch <setID>`,
-`--helper-selftest`). Read its audit log with
+`--helper-selftest`, `--switch <setID>` through the router, `--policy`, and
+`--login-item [on|off]`). After rebuilding, the old helper keeps serving until it
+has been idle for 60 seconds; wait it out before testing helper changes. Read its audit log with
 `/usr/bin/log show --predicate 'subsystem == "com.breed007.switchback.helper"'`.
 In zsh, a bare `log` is a shell builtin and silently does nothing useful.
 Unit tests: `scripts/test.sh` (regenerates the project first; the tests need no
