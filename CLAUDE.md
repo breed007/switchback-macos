@@ -26,8 +26,9 @@ overlap — see non-goals.
 
 ## Status
 
-Pre-1.0. v0.5.0 shipped 2026-10-04. Its spec, milestone results, and the list of
-what's still untested are in [docs/v0.5-spec.md](docs/v0.5-spec.md). Mirror Crossbar's
+Pre-1.0. v0.6.0 shipped 2026-10-04: the same app as v0.5.0, plus README screenshots;
+the version keeps step with Crossbar. The v0.5 spec, milestone results, and the list
+of what's still untested are in [docs/v0.5-spec.md](docs/v0.5-spec.md). Mirror Crossbar's
 structure and conventions where possible.
 
 ## Tech stack

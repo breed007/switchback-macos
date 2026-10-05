@@ -3,6 +3,20 @@
 All notable changes to Switchback are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.6.0] — 2026-10-04
+
+This release brings Switchback's version in step with Crossbar's. The app works the
+same as 0.5.0.
+
+### Added
+- **README screenshots** of the menu, the Manage Locations window, and the New
+  Location dialog, in light and dark. They use sample locations and addresses.
+- `scripts/screenshots.sh`, which regenerates them from the real UI through a
+  Debug-only demo mode. Release builds don't include the demo mode.
+
+### Not yet tested
+The items listed under 0.5.0 are still open.
+
 ## [0.5.0] — 2026-10-04
 
 ### Added
