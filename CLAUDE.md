@@ -47,14 +47,22 @@ xcodebuild -project Switchback.xcodeproj -scheme Switchback -configuration Relea
 
 Then copy the built `Switchback.app` to `/Applications`.
 
+**Hidden interfaces.** macOS hides services on interfaces whose driver has
+`HiddenConfiguration = Yes` in the I/O Registry (on Apple silicon, the internal
+USB-C networking interfaces, often en4–en6). `SCNetworkInterfaceCopyAll` still
+returns them, so `HiddenInterfaces` reads the flag through IOKit; without it the
+service counts disagree with System Settings and `networksetup`.
+
 **Testing the privileged helper (v0.5).** The helper only accepts calls from a
 Switchback signed by team `YA83Q8FTH3`, so unsigned builds can't reach it. Use
 `scripts/dev-build.sh` (Debug, Developer ID signed, installs to `/Applications`),
 then drive it from Terminal with the Debug-only flags:
 `/Applications/Switchback.app/Contents/MacOS/Switchback --helper-status`
 (also `--helper-register`, `--helper-unregister`, `--helper-switch <setID>`,
-`--helper-selftest`, `--switch <setID>` through the router, `--policy`, and
-`--login-item [on|off]`). After rebuilding, the old helper keeps serving until it
+`--helper-selftest`, `--switch <setID>` through the router, `--policy`,
+`--login-item [on|off]`, `--details`, `--locations`, and `--menu` / `--manage` /
+`--manage-sample`, which print the real menu and Manage window since computer-use
+can't see this agent's UI). After rebuilding, the old helper keeps serving until it
 has been idle for 60 seconds; wait it out before testing helper changes. Read its audit log with
 `/usr/bin/log show --predicate 'subsystem == "com.breed007.switchback.helper"'`.
 In zsh, a bare `log` is a shell builtin and silently does nothing useful.

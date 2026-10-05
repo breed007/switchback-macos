@@ -35,6 +35,14 @@ enum LocationSwitcherError: Error, CustomStringConvertible {
     case cannotDeleteCurrent
     case cannotDeleteLast
 
+    /// Problems with the name itself, which the user can fix by retyping.
+    var isNameProblem: Bool {
+        switch self {
+        case .emptyName, .nameTooLong, .reservedName, .duplicateName: return true
+        default: return false
+        }
+    }
+
     var description: String {
         switch self {
         case .canceled:             return "Canceled."

@@ -30,9 +30,28 @@ final class StatusMonitor {
         locations = all.compactMap { set -> NetworkLocation? in
             guard let id = SCNetworkSetGetSetID(set) as String?,
                   let name = SCNetworkSetGetName(set) as String? else { return nil }
-            return NetworkLocation(id: id, name: name, isCurrent: id == currentID)
+            let enabled = ((SCNetworkSetCopyServices(set) as? [SCNetworkService]) ?? [])
+                .filter { SCNetworkServiceGetEnabled($0) && !isHidden($0) }
+            let order = (SCNetworkSetGetServiceOrder(set) as? [String]) ?? []
+            let primary = order.lazy.compactMap { serviceID in
+                enabled.first { (SCNetworkServiceGetServiceID($0) as String?) == serviceID }
+            }.first ?? enabled.first
+            return NetworkLocation(id: id, name: name, isCurrent: id == currentID,
+                                   serviceCount: enabled.count,
+                                   primaryService: primary.flatMap { SCNetworkServiceGetName($0) as String? })
         }
         .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    /// Services on interfaces macOS hides from its settings don't count.
+    private var hiddenCache: [String: Bool] = [:]
+    private func isHidden(_ service: SCNetworkService) -> Bool {
+        guard let bsd = SCNetworkServiceGetInterface(service).flatMap({ SCNetworkInterfaceGetBSDName($0) as String? })
+        else { return false }   // e.g. VPN services have no BSD interface
+        if let known = hiddenCache[bsd] { return known }
+        let hidden = HiddenInterfaces.isHidden(bsdName: bsd)
+        hiddenCache[bsd] = hidden
+        return hidden
     }
 
     private func setupDynamicStore() {

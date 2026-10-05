@@ -1,5 +1,5 @@
 #if DEBUG
-import Foundation
+import AppKit
 import SystemConfiguration
 
 /// Debug-only command-line hooks for exercising the helper from Terminal. They run
@@ -15,6 +15,11 @@ import SystemConfiguration
 ///   --switch <setID>           switch through SwitchRouter (helper, else admin prompt)
 ///   --policy                   print the managed policy and whether you're an admin
 ///   --login-item [on|off]      print, or set, Launch at Login
+///   --details                  print the menu's live details line and its parts
+///   --locations                print locations in menu order, with service info
+///   --menu                     print the real menu as it would open
+///   --manage                   print the Manage Locations window's rows
+///   --manage-sample            the same, with made-up locations covering every row kind
 enum DebugCommands {
     /// Returns an exit code if a debug flag was handled, or nil to launch normally.
     static func run(_ args: [String]) -> Int32? {
@@ -52,6 +57,29 @@ enum DebugCommands {
             print("RequireAdminToSwitch: \(requireAdmin) (\(HelperPolicy.managedPreferencesPath))")
             print("uid \(getuid()) is admin: \(admin)")
             print("helper would \(HelperPolicy.allows(requireAdmin: requireAdmin, callerIsAdmin: admin) ? "allow" : "refuse") a switch from this user")
+            return 0
+
+        case "--details":
+            let details = NetworkDetails.current()
+            print("summary: \(details.summary)")
+            print("service: \(details.service ?? "-")  address: \(details.address ?? "-")  dns: \(details.dns)")
+            return 0
+
+        case "--locations":
+            let monitor = StatusMonitor()
+            for (index, loc) in LocationOrder.apply(LocationOrder().ids, to: monitor.locations).enumerated() {
+                print("\(index + 1). \(loc.isCurrent ? "*" : " ") \(loc.name)  [\(loc.id)]  services: \(loc.serviceCount)  primary: \(loc.primaryService ?? "-")")
+            }
+            return 0
+
+        case "--menu":
+            _ = NSApplication.shared
+            StatusItemController().debugMenuDump().forEach { print($0) }
+            return 0
+
+        case "--manage", "--manage-sample":
+            _ = NSApplication.shared
+            StatusItemController().debugManageDump(sample: args[1] == "--manage-sample").forEach { print($0) }
             return 0
 
         case "--login-item":

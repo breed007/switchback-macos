@@ -1,13 +1,22 @@
 import AppKit
 import ServiceManagement
 
-/// Owns the menu-bar status item and builds the location menu.
+/// Owns the menu-bar status item: builds the location menu, opens the Manage
+/// Locations window, and runs every change through `switcher`.
 final class StatusItemController: NSObject, NSMenuDelegate {
+    private static let showNameKey = "ShowLocationNameInMenuBar"
+
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let monitor = StatusMonitor()
     private let switcher: LocationSwitcher = SwitchRouter()
+    private let order = LocationOrder()
     private let menu = NSMenu()
     private var isBusy = false
+    private var manageWindow: ManageLocationsWindowController?
+    /// The current location last seen, so a switch from any source can be noticed.
+    private var lastCurrentID: String?
+    /// Pending reset of the name flashed next to the icon; nil when not flashing.
+    private var flashReset: DispatchWorkItem?
 
     override init() {
         super.init()
@@ -20,46 +29,61 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         }
         menu.delegate = self
         statusItem.menu = menu
-        // Live updates while the menu is already open (e.g. an external switch).
+        // Live updates (a switch made elsewhere, a DHCP change for the details line).
         monitor.onChange = { [weak self] in
-            DispatchQueue.main.async { self?.rebuildMenu() }
+            DispatchQueue.main.async { self?.locationsChanged(announce: true) }
         }
-        rebuildMenu()
+        locationsChanged(announce: false)
     }
 
-    /// Refresh from live system state every time the menu is about to show. The
-    /// event subscription can miss an external location switch — the current-set
-    /// pointer isn't an `SCDynamicStore` key — so this is the reliable read.
+    /// Re-read live state each time the menu opens. The event subscription can miss
+    /// an external switch (the current-set pointer isn't an `SCDynamicStore` key), so
+    /// this is the reliable read.
     func menuWillOpen(_ menu: NSMenu) {
         monitor.reload()
-        rebuildMenu()
+        locationsChanged(announce: false, refreshWindow: false)
     }
+
+    /// Locations in the user's order (F5).
+    private var locations: [NetworkLocation] {
+        LocationOrder.apply(order.ids, to: monitor.locations)
+    }
+
+    /// Update everything that shows locations. With `announce`, a change of the
+    /// current location flashes its name next to the icon (F6).
+    private func locationsChanged(announce: Bool, refreshWindow: Bool = true) {
+        rebuildMenu()
+        if refreshWindow { manageWindow?.refresh() }
+        let current = monitor.locations.first(where: \.isCurrent)
+        if announce, let current, let last = lastCurrentID, current.id != last {
+            flash(current.name)
+        }
+        lastCurrentID = current?.id
+        if flashReset == nil { updateTitle() }
+    }
+
+    // MARK: - Menu
 
     private func rebuildMenu() {
         menu.removeAllItems()
 
-        if monitor.locations.isEmpty {
+        let list = locations
+        if list.isEmpty {
             menu.addItem(disabled("No network locations found"))
-            menu.addItem(item(title: "New Location…", action: #selector(newLocation)))
-        } else if monitor.locations.count == 1 {
-            // A single "Automatic" location is the common default; show it, then
-            // make creating a second one the obvious next step.
-            let only = monitor.locations[0]
-            let currentItem = NSMenuItem(title: only.name, action: nil, keyEquivalent: "")
-            currentItem.state = .on
-            menu.addItem(currentItem)
-            menu.addItem(item(title: "New Location…", action: #selector(newLocation)))
-        } else {
-            for loc in monitor.locations {
-                let mi = item(title: loc.name, action: #selector(selectLocation(_:)))
-                mi.representedObject = loc.id
-                mi.state = loc.isCurrent ? .on : .off
-                menu.addItem(mi)
-            }
-            menu.addItem(.separator())
-            menu.addItem(item(title: "New Location…", action: #selector(newLocation)))
-            menu.addItem(manageMenuItem())
         }
+        for (index, location) in list.enumerated() {
+            // ⌘1 to ⌘9 for the first nine, in the user's order (F8).
+            let mi = item(title: location.name, action: #selector(selectLocation(_:)),
+                          key: index < 9 ? String(index + 1) : "")
+            mi.representedObject = location.id
+            mi.state = location.isCurrent ? .on : .off
+            menu.addItem(mi)
+            if location.isCurrent { menu.addItem(detailsItem()) }
+        }
+
+        menu.addItem(.separator())
+        menu.addItem(item(title: "New Location…", action: #selector(newLocationFromMenu)))
+        menu.addItem(item(title: "Manage Locations…", action: #selector(showManageWindow)))
 
         menu.addItem(.separator())
         menu.addItem(item(title: "Network Settings…", action: #selector(openNetworkSettings)))
@@ -71,6 +95,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         default:
             menu.addItem(item(title: "Set Up Passwordless Switching…", action: #selector(setUpHelper)))
         }
+        let showNameItem = item(title: "Show Location Name in Menu Bar", action: #selector(toggleShowName))
+        showNameItem.state = showName ? .on : .off
+        menu.addItem(showNameItem)
         let login = item(title: LoginItem.requiresApproval ? "Launch at Login (Needs Approval)" : "Launch at Login",
                          action: #selector(toggleLaunchAtLogin))
         login.state = LoginItem.isEnabled ? .on : (LoginItem.requiresApproval ? .mixed : .off)
@@ -78,78 +105,101 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(item(title: "Quit Switchback", action: #selector(quit), key: "q"))
     }
 
-    /// The "Manage Locations" submenu: rename any editable location, delete any
-    /// that isn't current or protected. Omitted entirely when nothing is editable.
-    private func manageMenuItem() -> NSMenuItem {
-        let editable = monitor.locations.filter { !$0.isProtected }
-        let deletable = editable.filter { !$0.isCurrent }
-
-        let submenu = NSMenu()
-
-        let renameHeader = disabled("Rename")
-        submenu.addItem(renameHeader)
-        for loc in editable {
-            let mi = item(title: "  \(loc.name)…", action: #selector(renameLocation(_:)))
-            mi.representedObject = loc.id
-            submenu.addItem(mi)
-        }
-
-        submenu.addItem(.separator())
-        let deleteHeader = disabled("Delete")
-        submenu.addItem(deleteHeader)
-        if deletable.isEmpty {
-            submenu.addItem(disabled("  (switch away to delete)"))
-        } else {
-            for loc in deletable {
-                let mi = item(title: "  \(loc.name)", action: #selector(deleteLocation(_:)))
-                mi.representedObject = loc.id
-                submenu.addItem(mi)
-            }
-        }
-
-        let parent = NSMenuItem(title: "Manage Locations", action: nil, keyEquivalent: "")
-        parent.submenu = submenu
-        // Nothing editable (e.g. only "Automatic" plus the current set): no submenu.
-        parent.isEnabled = !editable.isEmpty
-        return parent
+    /// The live details line under the current location (F6).
+    private func detailsItem() -> NSMenuItem {
+        let mi = NSMenuItem()
+        mi.attributedTitle = NSAttributedString(string: NetworkDetails.current().summary, attributes: [
+            .font: NSFont.menuFont(ofSize: NSFont.smallSystemFontSize),
+            .foregroundColor: NSColor.secondaryLabelColor,
+        ])
+        mi.indentationLevel = 1
+        mi.isEnabled = false
+        return mi
     }
 
-    // MARK: - Actions
+    // MARK: - Menu-bar title (F6)
+
+    private var showName: Bool { UserDefaults.standard.bool(forKey: Self.showNameKey) }
+
+    /// Show `text` (or the current location's name, if that option is on) next to
+    /// the icon, or the icon alone.
+    private func updateTitle(_ text: String? = nil) {
+        guard let button = statusItem.button else { return }
+        let name = text ?? (showName ? monitor.locations.first(where: \.isCurrent)?.name : nil)
+        button.title = name.map { " \($0)" } ?? ""
+        button.imagePosition = name == nil ? .imageOnly : .imageLeading
+    }
+
+    /// Show the new location's name for about three seconds after a switch.
+    private func flash(_ name: String) {
+        flashReset?.cancel()
+        updateTitle(name)
+        let reset = DispatchWorkItem { [weak self] in
+            self?.flashReset = nil
+            self?.updateTitle()
+        }
+        flashReset = reset
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: reset)
+    }
+
+    @objc private func toggleShowName() {
+        UserDefaults.standard.set(!showName, forKey: Self.showNameKey)
+        if flashReset == nil { updateTitle() }
+    }
+
+    // MARK: - Location actions
 
     @objc private func selectLocation(_ sender: NSMenuItem) {
-        guard let id = sender.representedObject as? String else { return }
+        // Choosing the location you're already on does nothing. Without the helper,
+        // "switching" to it would ask for a password for no change.
+        guard let id = sender.representedObject as? String,
+              monitor.locations.first(where: { $0.id == id })?.isCurrent == false else { return }
         perform { try await self.switcher.switchTo(locationID: id) }
     }
 
-    @objc private func newLocation() {
-        guard let name = promptForName(title: "New Location",
-                                       message: "Name for the new network location:",
-                                       defaultValue: "") else { return }
-        perform { try await self.switcher.createLocation(named: name) }
+    @objc private func newLocationFromMenu() {
+        newLocation()
     }
 
-    @objc private func renameLocation(_ sender: NSMenuItem) {
-        guard let id = sender.representedObject as? String,
-              let loc = monitor.locations.first(where: { $0.id == id }) else { return }
-        guard let name = promptForName(title: "Rename Location",
-                                       message: "New name for \u{201C}\(loc.name)\u{201D}:",
-                                       defaultValue: loc.name) else { return }
+    /// Ask for a name (checked as you type, F4), then create the location. If the
+    /// backend still rejects the name, reopen the dialog with the typed text.
+    private func newLocation(initial: String = "", error: String? = nil) {
+        monitor.reload()
+        let dialog = NameDialog(title: "New Location", message: "Name for the new network location:",
+                                initial: initial, existing: existingNames(), error: error)
+        guard let name = dialog.run() else { return }
+        perform({ try await self.switcher.createLocation(named: name) },
+                onNameError: { [weak self] problem in self?.newLocation(initial: name, error: problem.description) })
+    }
+
+    private func rename(id: String, to name: String) {
         perform { try await self.switcher.renameLocation(locationID: id, to: name) }
     }
 
-    @objc private func deleteLocation(_ sender: NSMenuItem) {
-        guard let id = sender.representedObject as? String,
-              let loc = monitor.locations.first(where: { $0.id == id }) else { return }
-        NSApp.activate(ignoringOtherApps: true)
-        let confirm = NSAlert()
-        confirm.messageText = "Delete \u{201C}\(loc.name)\u{201D}?"
-        confirm.informativeText = "This removes the location and its saved network settings. This can\u{2019}t be undone."
-        confirm.alertStyle = .warning
-        confirm.addButton(withTitle: "Delete")
-        confirm.addButton(withTitle: "Cancel")
-        guard confirm.runModal() == .alertFirstButtonReturn else { return }
+    private func delete(id: String) {
         perform { try await self.switcher.deleteLocation(locationID: id) }
     }
+
+    @objc private func showManageWindow() {
+        if manageWindow == nil {
+            manageWindow = ManageLocationsWindowController(actions: .init(
+                locations: { [weak self] in self?.locations ?? [] },
+                create: { [weak self] in self?.newLocation() },
+                rename: { [weak self] id, name in self?.rename(id: id, to: name) },
+                delete: { [weak self] id in self?.delete(id: id) },
+                reorder: { [weak self] ids in
+                    self?.order.save(ids)
+                    self?.rebuildMenu()
+                }))
+        }
+        manageWindow?.show()
+    }
+
+    private func existingNames() -> [LocationNameValidator.Existing] {
+        monitor.locations.map { LocationNameValidator.Existing(id: $0.id, name: $0.name) }
+    }
+
+    // MARK: - Settings actions
 
     /// Register the privileged helper, then send the user to approve it. The item
     /// disappears from the menu once the helper is enabled.
@@ -205,46 +255,33 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     // MARK: - Helpers
 
-    /// Run a privileged operation, then refresh. The work is async (the helper
-    /// replies over XPC; the admin-prompt backend runs on its own queue), so the
-    /// menu bar never blocks. A user canceling the auth panel is a silent no-op,
-    /// not an error. Re-entrant calls while one is in flight are ignored.
-    private func perform(_ work: @escaping () async throws -> Void) {
+    /// Run a privileged operation, then refresh the menu and window. The work is
+    /// async (the helper replies over XPC; the admin-prompt backend runs on its own
+    /// queue), so the menu bar never blocks. Canceling the auth panel is a silent
+    /// no-op. A name problem goes to `onNameError` (to reopen the dialog), after
+    /// the busy flag clears so the retry isn't ignored. Re-entrant calls while one
+    /// is in flight are ignored.
+    private func perform(_ work: @escaping () async throws -> Void,
+                         onNameError: ((LocationSwitcherError) -> Void)? = nil) {
         guard !isBusy else { return }
         isBusy = true
         Task { @MainActor in
-            do {
-                try await work()
-                isBusy = false
-                monitor.reload()
-                rebuildMenu()
-            } catch {
-                isBusy = false
-                if let e = error as? LocationSwitcherError, case .canceled = e { return }
-                presentError(error)
+            var failure: Error?
+            do { try await work() } catch { failure = error }
+            isBusy = false
+            monitor.reload()
+            locationsChanged(announce: true)
+
+            guard let failure else { return }
+            if let problem = failure as? LocationSwitcherError {
+                if case .canceled = problem { return }
+                if problem.isNameProblem, let onNameError {
+                    onNameError(problem)
+                    return
+                }
             }
+            presentError(failure)
         }
-    }
-
-    /// Modal text prompt. Returns the entered string, or nil if the user canceled.
-    private func promptForName(title: String, message: String, defaultValue: String) -> String? {
-        // A menu-bar agent isn't active by default; without this the modal can
-        // appear unfocused or behind other windows.
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.icon = NSApp.applicationIconImage   // show the branded Switchback mark
-        alert.messageText = title
-        alert.informativeText = message
-        alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: "Cancel")
-
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
-        field.stringValue = defaultValue
-        field.placeholderString = "Location name"
-        alert.accessoryView = field
-        alert.window.initialFirstResponder = field
-
-        return alert.runModal() == .alertFirstButtonReturn ? field.stringValue : nil
     }
 
     private func item(title: String, action: Selector, key: String = "") -> NSMenuItem {
@@ -268,3 +305,35 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         alert.runModal()
     }
 }
+
+#if DEBUG
+extension StatusItemController {
+    /// The real menu as it would open, one line per item (debug flag `--menu`).
+    func debugMenuDump() -> [String] {
+        menuWillOpen(menu)
+        let title = statusItem.button?.title ?? ""
+        return ["menu-bar title: \(title.isEmpty ? "(icon only)" : "\"\(title)\"")"] + menu.items.map { mi in
+            if mi.isSeparatorItem { return "  ────────" }
+            let state = mi.state == .on ? "✓ " : (mi.state == .mixed ? "– " : "  ")
+            let indent = String(repeating: "    ", count: mi.indentationLevel)
+            let key = mi.keyEquivalent.isEmpty ? "" : "   ⌘\(mi.keyEquivalent.uppercased())"
+            return "\(state)\(indent)\(mi.attributedTitle?.string ?? mi.title)\(key)\(mi.isEnabled ? "" : "   (disabled)")"
+        }
+    }
+
+    /// The Manage Locations window's rows, built off-screen (debug flags `--manage`
+    /// and `--manage-sample`, which uses made-up locations to cover every row kind).
+    func debugManageDump(sample: Bool = false) -> [String] {
+        let fake = [
+            NetworkLocation(id: "a", name: "Automatic", isCurrent: false, serviceCount: 4, primaryService: "Wi-Fi"),
+            NetworkLocation(id: "o", name: "Office", isCurrent: true, serviceCount: 2, primaryService: "Thunderbolt Ethernet Slot 0"),
+            NetworkLocation(id: "c", name: "Client A", isCurrent: false, serviceCount: 1, primaryService: "Wi-Fi"),
+            NetworkLocation(id: "e", name: "Empty", isCurrent: false, serviceCount: 0, primaryService: nil),
+        ]
+        let window = ManageLocationsWindowController(actions: .init(
+            locations: { [self] in sample ? fake : locations },
+            create: {}, rename: { _, _ in }, delete: { _ in }, reorder: { _ in }))
+        return window.debugDump()
+    }
+}
+#endif
