@@ -25,6 +25,9 @@ final class StatusMonitor {
     /// Read every location from the preferences, alphabetically. No privileges and
     /// no run-loop hookup, so Shortcuts and Focus can call it from any thread.
     static func readLocations() -> [NetworkLocation] {
+        #if DEBUG
+        if DemoData.active { return DemoData.locations }
+        #endif
         guard let prefs = SCPreferencesCreate(nil, "Switchback" as CFString, nil) else { return [] }
         let currentID = SCNetworkSetCopyCurrent(prefs).flatMap { SCNetworkSetGetSetID($0) as String? }
         let all = (SCNetworkSetCopyAll(prefs) as? [SCNetworkSet]) ?? []

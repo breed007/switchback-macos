@@ -379,6 +379,11 @@ final class LocationsTableView: NSTableView {
 
 #if DEBUG
 extension ManageLocationsWindowController {
+    func debugSelect(row: Int) {
+        guard rows.indices.contains(row) else { return }
+        table.selectRowIndexes([row], byExtendingSelection: false)
+    }
+
     /// Each row as the table shows it, with the delete button's state when that row
     /// is selected (debug flag `--manage`).
     func debugDump() -> [String] {

@@ -20,6 +20,9 @@ import SystemConfiguration
 ///   --menu                     print the real menu as it would open
 ///   --manage                   print the Manage Locations window's rows
 ///   --manage-sample            the same, with made-up locations covering every row kind
+///   --demo menu|manage|dialog [light|dark]
+///                              open that UI with sample data and keep running, for
+///                              README screenshots (scripts/screenshots.sh)
 enum DebugCommands {
     /// Returns an exit code if a debug flag was handled, or nil to launch normally.
     static func run(_ args: [String]) -> Int32? {
@@ -70,6 +73,17 @@ enum DebugCommands {
             for (index, loc) in LocationOrder.apply(LocationOrder().ids, to: monitor.locations).enumerated() {
                 print("\(index + 1). \(loc.isCurrent ? "*" : " ") \(loc.name)  [\(loc.id)]  services: \(loc.serviceCount)  primary: \(loc.primaryService ?? "-")")
             }
+            return 0
+
+        case "--demo":
+            DemoData.active = true
+            let app = NSApplication.shared
+            app.setActivationPolicy(.accessory)
+            if args.count >= 4 { app.appearance = NSAppearance(named: args[3] == "light" ? .aqua : .darkAqua) }
+            let controller = StatusItemController()
+            let what = args.count >= 3 ? args[2] : "menu"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { controller.debugDemo(what) }
+            app.run()   // until killed
             return 0
 
         case "--menu":

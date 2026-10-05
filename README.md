@@ -12,6 +12,13 @@ Crossbar toggles network *services* (Wi-Fi, Ethernet, VPN). Switchback switches 
 *locations*: the named sets of network settings Apple buried so deep that most people
 think the feature was removed.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menu-dark.png">
+    <img src="docs/screenshots/menu-light.png" alt="Switchback's menu: four locations with Office checked, a line under it showing Ethernet, an address, and DNS servers, then New Location, Manage Locations, and settings items" width="440">
+  </picture>
+</p>
+
 ## Why Switchback?
 
 macOS **locations** still exist, but as of Sonoma, Sequoia, and Tahoe the only way to
@@ -39,6 +46,23 @@ static-IP setup, that's a multi-step detour replaced by a single click.
   switch, and switches made by Shortcuts or a Focus post a notification. You can also
   keep the name in the menu bar.
 - **Launches at login**, if you want it to.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/manage-dark.png">
+    <img src="docs/screenshots/manage-light.png" alt="The Manage Locations window: a table of four locations with Office marked current, Client Site A selected, and each row's service count" width="560">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dialog-dark.png">
+    <img src="docs/screenshots/dialog-light.png" alt="The New Location dialog with “client site a” typed in, a red note saying “Client Site A” already uses that name, and OK disabled" width="380">
+  </picture>
+</p>
+
+<sub>Screenshots use sample locations and addresses. Regenerate them with
+<code>scripts/dev-build.sh</code> then <code>scripts/screenshots.sh</code>.</sub>
 
 ## Requirements
 

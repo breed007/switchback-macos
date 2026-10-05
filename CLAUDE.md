@@ -75,6 +75,13 @@ In zsh, a bare `log` is a shell builtin and silently does nothing useful.
 Unit tests: `scripts/test.sh` (regenerates the project first; the tests need no
 privileges).
 
+**README screenshots.** `scripts/screenshots.sh` (after `scripts/dev-build.sh`)
+regenerates `docs/screenshots/` in light and dark from the real UI, using the
+Debug-only `--demo` mode and `DemoData`, so no real network details appear. It
+captures the composited screen region over a backdrop in GitHub's page color: a
+single-window capture (`screencapture -l`) flattens menu materials, which made the
+light menu render as flat gray. View every image before committing it.
+
 ## Architecture
 
 Switchback is built around one fact, exactly like Crossbar:

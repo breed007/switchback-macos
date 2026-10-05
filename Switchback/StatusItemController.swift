@@ -55,7 +55,11 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     /// Locations in the user's order (F5).
     private var locations: [NetworkLocation] {
-        LocationOrder.apply(order.ids, to: monitor.locations)
+        var ids = order.ids
+        #if DEBUG
+        if DemoData.active { ids = DemoData.order }
+        #endif
+        return LocationOrder.apply(ids, to: monitor.locations)
     }
 
     /// Update everything that shows locations. With `announce`, a change of the
@@ -324,6 +328,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
 #if DEBUG
 extension StatusItemController {
+    private static var demoBackdrop: NSWindow?
+
     /// The real menu as it would open, one line per item (debug flag `--menu`).
     func debugMenuDump() -> [String] {
         menuWillOpen(menu)
@@ -334,6 +340,43 @@ extension StatusItemController {
             let indent = String(repeating: "    ", count: mi.indentationLevel)
             let key = mi.keyEquivalent.isEmpty ? "" : "   ⌘\(mi.keyEquivalent.uppercased())"
             return "\(state)\(indent)\(mi.attributedTitle?.string ?? mi.title)\(key)\(mi.isEnabled ? "" : "   (disabled)")"
+        }
+    }
+
+    /// Open one piece of UI with sample data for a screenshot (debug flag `--demo`).
+    func debugDemo(_ what: String) {
+        menu.appearance = NSApp.appearance
+        // A backdrop in GitHub's page color, above everything else on screen and
+        // just below menus. The script captures the composited screen region, so
+        // menu and window materials blend with this (as they would with a desktop)
+        // instead of with the real screen, and the image blends into the README.
+        let dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        let backdrop = NSWindow(contentRect: NSScreen.main?.frame ?? .zero, styleMask: .borderless,
+                                backing: .buffered, defer: false)
+        backdrop.title = "SwitchbackDemoBackdrop"   // the capture script skips it by name
+        backdrop.backgroundColor = DemoData.backdropColor(dark: dark)
+        // Just below what's captured: menus for the menu and window shots (the window
+        // is raised to menu level), modal panels for the dialog, whose level NSAlert
+        // sets itself when it runs.
+        let below = what == "dialog" ? NSWindow.Level.modalPanel : NSWindow.Level.popUpMenu
+        backdrop.level = NSWindow.Level(rawValue: below.rawValue - 1)
+        backdrop.ignoresMouseEvents = true
+        backdrop.orderFrontRegardless()
+        Self.demoBackdrop = backdrop
+
+        switch what {
+        case "manage":
+            showManageWindow()
+            manageWindow?.window?.level = DemoData.uiLevel
+            manageWindow?.window?.setContentSize(NSSize(width: 500, height: 236))   // fit four rows
+            manageWindow?.debugSelect(row: 1)    // "Client Site A": shows selection and an enabled −
+        case "dialog":
+            NSApp.activate(ignoringOtherApps: true)
+            // A case-only duplicate of an existing name, to show the live check.
+            _ = NameDialog(title: "New Location", message: "Name for the new network location:",
+                           initial: "client site a", existing: existingNames()).run()
+        default:
+            statusItem.button?.performClick(nil)   // opens the menu
         }
     }
 

@@ -19,6 +19,9 @@ struct NetworkDetails: Equatable {
     }
 
     static func current() -> NetworkDetails {
+        #if DEBUG
+        if DemoData.active { return DemoData.details }
+        #endif
         guard let store = SCDynamicStoreCreate(nil, "Switchback" as CFString, nil, nil) else {
             return NetworkDetails()
         }
