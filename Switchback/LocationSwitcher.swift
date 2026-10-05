@@ -62,3 +62,8 @@ enum LocationSwitcherError: Error, CustomStringConvertible {
         }
     }
 }
+
+/// Shortcuts shows `errorDescription`.
+extension LocationSwitcherError: LocalizedError {
+    var errorDescription: String? { description }
+}

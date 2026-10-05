@@ -47,6 +47,12 @@ xcodebuild -project Switchback.xcodeproj -scheme Switchback -configuration Relea
 
 Then copy the built `Switchback.app` to `/Applications`.
 
+**Shortcuts and Focus (v0.5).** The App Intents live in the app target
+(`Intents.swift`), not an extension, so the helper's single-identifier caller check
+covers them. The rules (a Focus never prompts; every automated switch is announced)
+are in `AutomationSwitch`, which is unit-tested without App Intents. Automation
+runs are logged: `/usr/bin/log show --predicate 'subsystem == "com.breed007.switchback" AND category == "automation"'`.
+
 **Hidden interfaces.** macOS hides services on interfaces whose driver has
 `HiddenConfiguration = Yes` in the I/O Registry (on Apple silicon, the internal
 USB-C networking interfaces, often en4–en6). `SCNetworkInterfaceCopyAll` still

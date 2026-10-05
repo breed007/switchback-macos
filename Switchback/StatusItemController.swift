@@ -1,3 +1,4 @@
+import AppIntents
 import AppKit
 import ServiceManagement
 
@@ -8,7 +9,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let monitor = StatusMonitor()
-    private let switcher: LocationSwitcher = SwitchRouter()
+    private let switcher: LocationSwitcher = SwitchRouter.shared
     private let order = LocationOrder()
     private let menu = NSMenu()
     private var isBusy = false
@@ -17,6 +18,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private var lastCurrentID: String?
     /// Pending reset of the name flashed next to the icon; nil when not flashing.
     private var flashReset: DispatchWorkItem?
+    /// The location IDs and names last given to Siri and Spotlight.
+    private var publishedLocations: [String] = []
 
     override init() {
         super.init()
@@ -32,6 +35,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         // Live updates (a switch made elsewhere, a DHCP change for the details line).
         monitor.onChange = { [weak self] in
             DispatchQueue.main.async { self?.locationsChanged(announce: true) }
+        }
+        // Shortcuts or a Focus switched: refresh and flash, even if the dynamic store
+        // didn't notice (two locations with the same IPv4 setup).
+        NotificationCenter.default.addObserver(forName: .switchbackLocationChanged, object: nil, queue: .main) { [weak self] _ in
+            self?.monitor.reload()
+            self?.locationsChanged(announce: true)
         }
         locationsChanged(announce: false)
     }
@@ -60,6 +69,13 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         }
         lastCurrentID = current?.id
         if flashReset == nil { updateTitle() }
+
+        // Siri and Spotlight phrases name locations; refresh them when the list changes.
+        let published = monitor.locations.map { "\($0.id)\t\($0.name)" }
+        if published != publishedLocations {
+            publishedLocations = published
+            SwitchbackShortcuts.updateAppShortcutParameters()
+        }
     }
 
     // MARK: - Menu

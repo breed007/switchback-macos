@@ -19,19 +19,21 @@ final class StatusMonitor {
     }
 
     func reload() {
-        guard let prefs = SCPreferencesCreate(nil, "Switchback" as CFString, nil) else {
-            locations = []
-            return
-        }
-        let current = SCNetworkSetCopyCurrent(prefs)
-        let currentID = current.flatMap { SCNetworkSetGetSetID($0) as String? }
+        locations = Self.readLocations()
+    }
 
+    /// Read every location from the preferences, alphabetically. No privileges and
+    /// no run-loop hookup, so Shortcuts and Focus can call it from any thread.
+    static func readLocations() -> [NetworkLocation] {
+        guard let prefs = SCPreferencesCreate(nil, "Switchback" as CFString, nil) else { return [] }
+        let currentID = SCNetworkSetCopyCurrent(prefs).flatMap { SCNetworkSetGetSetID($0) as String? }
         let all = (SCNetworkSetCopyAll(prefs) as? [SCNetworkSet]) ?? []
-        locations = all.compactMap { set -> NetworkLocation? in
+        return all.compactMap { set -> NetworkLocation? in
             guard let id = SCNetworkSetGetSetID(set) as String?,
                   let name = SCNetworkSetGetName(set) as String? else { return nil }
+            // Services on interfaces macOS hides from its settings don't count.
             let enabled = ((SCNetworkSetCopyServices(set) as? [SCNetworkService]) ?? [])
-                .filter { SCNetworkServiceGetEnabled($0) && !isHidden($0) }
+                .filter { SCNetworkServiceGetEnabled($0) && !HiddenInterfaces.isHidden($0) }
             let order = (SCNetworkSetGetServiceOrder(set) as? [String]) ?? []
             let primary = order.lazy.compactMap { serviceID in
                 enabled.first { (SCNetworkServiceGetServiceID($0) as String?) == serviceID }
@@ -41,17 +43,6 @@ final class StatusMonitor {
                                    primaryService: primary.flatMap { SCNetworkServiceGetName($0) as String? })
         }
         .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }
-
-    /// Services on interfaces macOS hides from its settings don't count.
-    private var hiddenCache: [String: Bool] = [:]
-    private func isHidden(_ service: SCNetworkService) -> Bool {
-        guard let bsd = SCNetworkServiceGetInterface(service).flatMap({ SCNetworkInterfaceGetBSDName($0) as String? })
-        else { return false }   // e.g. VPN services have no BSD interface
-        if let known = hiddenCache[bsd] { return known }
-        let hidden = HiddenInterfaces.isHidden(bsdName: bsd)
-        hiddenCache[bsd] = hidden
-        return hidden
     }
 
     private func setupDynamicStore() {

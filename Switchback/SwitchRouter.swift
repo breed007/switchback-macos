@@ -7,6 +7,10 @@ import os
 /// renaming, and deleting always use the admin-authorized backend, because they
 /// change configuration.
 final class SwitchRouter: LocationSwitcher {
+    /// The app's one router. The menu, Shortcuts, and Focus all use it, so their
+    /// admin-prompt commits share one serial queue.
+    static let shared = SwitchRouter()
+
     private let authorized: LocationSwitcher
     private let helperEnabled: () -> Bool
     private let helperSwitch: (String) async throws -> Void

@@ -106,3 +106,8 @@ extension SMAppService.Status {
         }
     }
 }
+
+/// Shortcuts shows `errorDescription`.
+extension HelperError: LocalizedError {
+    var errorDescription: String? { description }
+}

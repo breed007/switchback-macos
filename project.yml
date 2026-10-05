@@ -82,6 +82,12 @@ targets:
           - DebugCommands.swift
           - Info.plist
           - Assets.xcassets
+          # The App Intents shell, and the two files that reference it. In a test
+          # bundle it makes the test process register App Shortcuts with the system.
+          # The rules it calls (AutomationSwitch) are tested directly.
+          - Intents.swift
+          - StatusItemController.swift
+          - AppDelegate.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.breed007.switchback.tests
