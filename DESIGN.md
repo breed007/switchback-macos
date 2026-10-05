@@ -59,12 +59,39 @@ The `scselect` / `networksetup` shell-out remains documented as a fallback, but 
 if the AuthorizationRef path proves impractical, because it would drag the sudoers
 requirement back in.
 
-### Event-driven reads, never polling
+### A helper for switching, the prompt for everything else (v0.5)
 
-Like Crossbar, the read layer subscribes to `SCDynamicStore` and refreshes only when
-network state actually changes. Polling would burn cycles to mostly observe nothing;
-an event-driven monitor is both lighter and more correct (the menu is right the instant
-something changes, including changes Switchback didn't initiate).
+The `AuthorizationRef` path asks for an administrator's password on every commit. The
+right it needs (`system.services.systemconfiguration.network`) resolves to
+`authenticate-admin-nonshared`, so the password is never reused between switches, and
+a standard user can't switch at all without an administrator. For an app whose pitch
+is one click, that was the main problem.
+
+v0.5 adds a privileged helper, registered with `SMAppService` and reached over XPC,
+and splits privilege by intent:
+
+- **Switching** goes through the helper, with no prompt, for any local user. The
+  helper does exactly one thing: make an existing location current, by set ID. It
+  accepts calls only from Switchback signed by our team, checks the ID against the
+  live configuration, and logs each switch.
+- **Creating, renaming, and deleting** keep the admin prompt, because they change
+  configuration.
+
+The one-operation limit is what makes standard-user switching acceptable: a standard
+user can only move between locations an administrator already set up. IT can still
+require admin rights with a managed preference (`RequireAdminToSwitch`). If the
+helper isn't set up, can't be reached, or refuses by policy, a switch falls back to
+the admin prompt, so nothing depends on the helper being installed.
+
+The `LocationSwitcher` seam made this a backend swap. The menu didn't change.
+
+### Reads on demand, with live updates
+
+The menu re-reads the locations every time it opens, and that read is the source of
+truth. The current-location pointer lives in the preferences file, not in
+`SCDynamicStore`, so a dynamic-store subscription alone misses some switches made
+elsewhere: two locations with the same IPv4 setup produce no change it can see. The
+subscription stays for live updates while the menu is open. Nothing polls.
 
 ### AppKit, no dependencies
 
@@ -109,6 +136,12 @@ just change?" surprise the app is meant to eliminate. Switchback stays manual an
 predictable. If automation is wanted, that's a different product with a different risk
 profile.
 
+Shortcuts and Focus support (v0.5) doesn't change this. Switchback still has no rules
+engine: it provides a Switch Network Location action and a Focus filter, and the user
+writes the rule in Apple's own tools. Every automated switch posts a notification, so
+the change is never silent. A Focus never prompts for a password; without the helper,
+it skips the switch and says how to set the helper up.
+
 ### It is not bundled with Crossbar into one "network menu" app
 
 Tempting, rejected. A combined app would carry two privilege models, two feature sets,
@@ -118,9 +151,9 @@ on its own merits.
 
 ## Future considerations
 
-- **XPC / `SMAppService` backend.** If `AuthorizationRef` proves limiting, a privileged
-  helper over XPC is the natural next step — and the `LocationSwitcher` protocol seam
-  exists precisely so that swap costs nothing in the UI.
+- **A shared package with Crossbar.** Both apps now carry a copy of the same helper
+  design: an `SMAppService` daemon that accepts only its own app's signature. Under
+  the rule of three, it becomes a Swift package when a third app needs it.
 - **Cross-platform brand.** The `switchback-macos` repo name reserves room for future
   siblings, but the design does not pretend the SystemConfiguration layer ports. The
   *concept* ("switch between named network setups") travels; a Linux build would target

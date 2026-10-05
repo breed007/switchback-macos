@@ -26,9 +26,9 @@ overlap — see non-goals.
 
 ## Status
 
-Pre-1.0. v0.1.1 shipped 2026-07-01. **v0.5 is planned in
-[docs/v0.5-spec.md](docs/v0.5-spec.md); read it before starting v0.5 work.** Mirror
-Crossbar's structure and conventions where possible.
+Pre-1.0. v0.5.0 shipped 2026-10-04. Its spec, milestone results, and the list of
+what's still untested are in [docs/v0.5-spec.md](docs/v0.5-spec.md). Mirror Crossbar's
+structure and conventions where possible.
 
 ## Tech stack
 
@@ -117,6 +117,14 @@ without touching the interface.
 - Create/rename/delete locations (`SCNetworkSetCreate`, `SCNetworkSetSetName`,
   `SCNetworkSetRemove`) are also privileged commits through this same backend.
 
+**v0.5: the privileged helper, and the router.** `SwitchRouter` sends switches to
+`SwitchbackHelper`, a root `SMAppService` daemon reached over XPC, when it's enabled,
+and otherwise to the `AuthorizationRef` backend. Create, rename, and delete always use
+the `AuthorizationRef` backend. The helper has one operation (switch to an existing
+set by ID), pins its caller to Switchback's signature, validates the ID, enforces the
+managed `RequireAdminToSwitch` policy, and logs each switch. See DESIGN.md and
+docs/v0.5-spec.md.
+
 **Fallback backend — shell-out (only if AuthorizationRef proves painful):**
 
 - `scselect <location>` to switch; `networksetup -switchtolocation`,
@@ -125,20 +133,27 @@ without touching the interface.
   validate location names against the live set; serialize operations. This path
   would reintroduce the sudoers requirement, so prefer the AuthorizationRef backend.
 
-## Proposed file layout (mirror Crossbar)
+## File layout
 
 ```
 Switchback/
-  AppDelegate.swift          # agent lifecycle, status item
-  StatusItemController.swift # menu-bar icon + popover
-  LocationModel.swift        # value types for a location + current marker
-  StatusMonitor.swift        # SCDynamicStore event-driven reads
-  LocationSwitcher.swift     # protocol (the seam)
-  AuthorizedSwitcher.swift   # AuthorizationRef + SCPreferences backend
-  Views/                     # AppKit popover UI
-Switchback.xcodeproj
-docs/                        # popover.png, details.png, screenshots
-DESIGN.md  README.md  CHANGELOG.md  LICENSE
+  main.swift, AppDelegate.swift   # agent lifecycle; notification banners
+  StatusItemController.swift      # menu, name flash, Manage window, every action
+  ManageLocationsWindowController.swift, NameDialog.swift   # F5 window, F4 dialog
+  StatusMonitor.swift             # reads locations (+ live-update subscription)
+  LocationModel.swift, LocationOrder.swift, LocationRules.swift,
+  LocationNameValidator.swift, NetworkDetails.swift, HiddenInterfaces.swift
+  LocationSwitcher.swift          # the protocol (the seam) and its errors
+  SwitchRouter.swift              # helper when enabled, else the admin prompt
+  AuthorizedSwitcher.swift        # AuthorizationRef + SCPreferences backend
+  HelperClient.swift              # SMAppService registration + the XPC call
+  Automation.swift, Intents.swift, SwitchNotifier.swift   # Shortcuts/Focus (F7)
+  LoginItem.swift, DebugCommands.swift (Debug only)
+Helper/      # SwitchbackHelper: the root daemon (one op: switch by set ID)
+Shared/      # HelperConstants, HelperPolicy: compiled into app, helper, and tests
+Tests/       # unit tests (scripts/test.sh)
+scripts/     # dev-build.sh, test.sh, release.sh, generate_icon.swift
+docs/        # v0.5-spec.md, mdm/switchback-sample.mobileconfig
 ```
 
 ## Edge cases Claude Code must handle

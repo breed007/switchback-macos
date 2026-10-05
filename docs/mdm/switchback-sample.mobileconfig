@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Sample configuration profile for deploying Switchback with MDM.
+  NOT YET TESTED against a real MDM enrollment (see docs/v0.5-spec.md).
+
+  Install as a device (computer-level) profile:
+  1. Pre-approves Switchback's helper, so users never see the approval step.
+     The rule names the helper's launchd label, which is narrower than a Team ID
+     rule (that would approve every background item the developer signs).
+  2. Sets the switching policy. false (the default) lets any local user switch
+     between existing locations; true requires an administrator.
+-->
+<plist version="1.0">
+<dict>
+    <key>PayloadType</key>
+    <string>Configuration</string>
+    <key>PayloadVersion</key>
+    <integer>1</integer>
+    <key>PayloadIdentifier</key>
+    <string>com.breed007.switchback.sample</string>
+    <key>PayloadUUID</key>
+    <string>58B59BB2-FC6C-4716-81E1-4BE3DF0AA73B</string>
+    <key>PayloadDisplayName</key>
+    <string>Switchback (sample)</string>
+    <key>PayloadScope</key>
+    <string>System</string>
+    <key>PayloadContent</key>
+    <array>
+        <dict>
+            <key>PayloadType</key>
+            <string>com.apple.servicemanagement</string>
+            <key>PayloadVersion</key>
+            <integer>1</integer>
+            <key>PayloadIdentifier</key>
+            <string>com.breed007.switchback.sample.helper</string>
+            <key>PayloadUUID</key>
+            <string>7283A58C-C588-4091-98E6-025E3BF83140</string>
+            <key>PayloadDisplayName</key>
+            <string>Approve Switchback's helper</string>
+            <key>Rules</key>
+            <array>
+                <dict>
+                    <key>RuleType</key>
+                    <string>Label</string>
+                    <key>RuleValue</key>
+                    <string>com.breed007.switchback.helper</string>
+                    <key>Comment</key>
+                    <string>Switchback's privileged helper (switches locations only)</string>
+                </dict>
+            </array>
+        </dict>
+        <dict>
+            <key>PayloadType</key>
+            <string>com.breed007.switchback</string>
+            <key>PayloadVersion</key>
+            <integer>1</integer>
+            <key>PayloadIdentifier</key>
+            <string>com.breed007.switchback.sample.policy</string>
+            <key>PayloadUUID</key>
+            <string>6FC9C668-4B6F-499D-A8C1-C4758424E9DB</string>
+            <key>PayloadDisplayName</key>
+            <string>Switchback switching policy</string>
+            <key>RequireAdminToSwitch</key>
+            <false/>
+        </dict>
+    </array>
+</dict>
+</plist>

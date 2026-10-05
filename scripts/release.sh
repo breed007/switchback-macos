@@ -51,6 +51,25 @@ echo "==> Verifying signature + hardened runtime"
 codesign --verify --deep --strict --verbose=2 "$APP"
 codesign -dvv "$APP" 2>&1 | grep -E 'Authority|TeamIdentifier|flags' || true
 
+echo "==> Verifying the embedded helper"
+HELPER="$APP/Contents/MacOS/SwitchbackHelper"
+test -f "$APP/Contents/Library/LaunchDaemons/com.breed007.switchback.helper.plist" \
+  || { echo "missing the helper's launchd plist"; exit 1; }
+HELPER_INFO="$(codesign -dvv "$HELPER" 2>&1)"
+echo "$HELPER_INFO" | grep -q "^Identifier=com.breed007.switchback.helper$" \
+  || { echo "helper identifier is wrong"; exit 1; }
+echo "$HELPER_INFO" | grep -q "^Authority=Developer ID Application:.*(YA83Q8FTH3)" \
+  || { echo "helper isn't signed with the Developer ID"; exit 1; }
+echo "$HELPER_INFO" | grep -q "flags=.*runtime" \
+  || { echo "helper is missing the Hardened Runtime"; exit 1; }
+# Notarization rejects the debugging entitlement Xcode adds to Debug builds.
+for BIN in "$APP" "$HELPER"; do
+  if codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q get-task-allow; then
+    echo "$BIN carries get-task-allow"; exit 1
+  fi
+done
+echo "    helper: Developer ID, Hardened Runtime, no debug entitlement"
+
 mkdir -p dist
 
 echo "==> Notarizing the app"
