@@ -57,7 +57,7 @@ static-IP setup, that's a multi-step detour replaced by a single click.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dialog-dark.png">
-    <img src="docs/screenshots/dialog-light.png" alt="The New Location dialog with “client site a” typed in, a red note saying “Client Site A” already uses that name, and OK disabled" width="380">
+    <img src="docs/screenshots/dialog-light.png" alt="The New Location dialog with “Client Site B” typed in and the OK button enabled" width="376">
   </picture>
 </p>
 

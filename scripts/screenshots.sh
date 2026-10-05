@@ -10,6 +10,9 @@
 #
 # Needs Screen Recording permission for whatever runs it (macOS asks once).
 #
+#   scripts/screenshots.sh                 # all: menu, manage, dialog
+#   scripts/screenshots.sh dialog          # just these
+#
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -42,14 +45,18 @@ SWIFT
   swiftc -O build/dev/window-for-pid.swift -o "$FINDER"
 fi
 
-for what in menu manage dialog; do
+for what in ${@:-menu manage dialog}; do
   for look in light dark; do
     "$BIN" --demo "$what" "$look" >/dev/null 2>&1 &
     pid=$!
-    bounds=""
-    for _ in $(seq 1 30); do          # up to ~6 s for the UI to appear
+    # Wait until the window's bounds read the same twice in a row (up to ~8 s): a
+    # dialog can be on screen mid-layout at a smaller size before it settles.
+    bounds=""; prev=""
+    for _ in $(seq 1 40); do
       sleep 0.2
-      bounds=$("$FINDER" "$pid" 2>/dev/null) && [ -n "$bounds" ] && break
+      bounds=$("$FINDER" "$pid" 2>/dev/null) || bounds=""
+      [ -n "$bounds" ] && [ "$bounds" = "$prev" ] && break
+      prev="$bounds"
     done
     sleep 0.6                         # let it finish drawing
     if [ -n "$bounds" ]; then

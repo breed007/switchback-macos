@@ -372,9 +372,17 @@ extension StatusItemController {
             manageWindow?.debugSelect(row: 1)    // "Client Site A": shows selection and an enabled −
         case "dialog":
             NSApp.activate(ignoringOtherApps: true)
-            // A case-only duplicate of an existing name, to show the live check.
+            // A new, valid name with OK enabled. Put the caret at the end instead of
+            // selecting the text, so it reads as typing. NSAlert's modal loop fires
+            // timers scheduled in the common modes, not queued main-queue blocks.
+            let caret = Timer(timeInterval: 0.3, repeats: false) { _ in
+                if let editor = NSApp.keyWindow?.firstResponder as? NSTextView {
+                    editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
+                }
+            }
+            RunLoop.main.add(caret, forMode: .common)
             _ = NameDialog(title: "New Location", message: "Name for the new network location:",
-                           initial: "client site a", existing: existingNames()).run()
+                           initial: "Client Site B", existing: existingNames()).run()
         default:
             statusItem.button?.performClick(nil)   // opens the menu
         }

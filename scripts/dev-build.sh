@@ -6,6 +6,9 @@
 # unsigned (CODE_SIGNING_ALLOWED=NO) builds can't exercise it. This build is not
 # notarized; it's for local testing only. Use scripts/release.sh for releases.
 #
+#   scripts/dev-build.sh                # build, then install to /Applications
+#   scripts/dev-build.sh --no-install   # build only (e.g. for scripts/screenshots.sh)
+#
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -30,6 +33,10 @@ fi
 grep -E "warning:" "$LOG" | grep -v AppIntents || true
 
 codesign --verify --deep --strict "$APP"
+if [ "${1:-}" = "--no-install" ]; then
+  echo "Built $APP (not installed)"
+  exit 0
+fi
 
 pkill -x Switchback 2>/dev/null || true
 rm -rf /Applications/Switchback.app
