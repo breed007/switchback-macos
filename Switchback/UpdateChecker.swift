@@ -18,10 +18,20 @@ struct UpdatePreferences {
     init(_ defaults: UserDefaults = .standard) {
         #if DEBUG
         // Demo mode (README screenshots) never reads or changes the real settings.
-        let defaults = DemoData.active ? UserDefaults(suiteName: "com.breed007.switchback.demo")! : defaults
+        let defaults = DemoData.active ? Self.demoDefaults : defaults
         #endif
         self.defaults = defaults
     }
+
+    #if DEBUG
+    /// Cleared once per run, so a demo always starts with checks off.
+    private static let demoDefaults: UserDefaults = {
+        let name = "com.breed007.switchback.demo"
+        let suite = UserDefaults(suiteName: name)!
+        suite.removePersistentDomain(forName: name)
+        return suite
+    }()
+    #endif
 
     /// Check GitHub for a newer release once a day. Off (nil) until the user turns it
     /// on from the menu.
@@ -141,12 +151,19 @@ final class UpdateChecker {
     }
 
     /// One GET with nothing about the Mac in it: an ephemeral session (no cookies,
-    /// no cache) and a fixed User-Agent.
-    nonisolated static func liveFetch(_ url: URL) async throws -> Data {
+    /// no cache) and fixed headers. URLSession would otherwise add the user's
+    /// languages as Accept-Language and its own User-Agent naming the OS version.
+    nonisolated static func request(for url: URL) -> URLRequest {
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
         request.httpShouldHandleCookies = false
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("Switchback", forHTTPHeaderField: "User-Agent")
+        request.setValue("en", forHTTPHeaderField: "Accept-Language")
+        return request
+    }
+
+    nonisolated static func liveFetch(_ url: URL) async throws -> Data {
+        let request = request(for: url)
         let session = URLSession(configuration: .ephemeral)
         defer { session.finishTasksAndInvalidate() }
         let (data, response) = try await session.data(for: request)

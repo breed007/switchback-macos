@@ -18,6 +18,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Changed
 - README and PRIVACY.md describe the update check: what it requests, what it sends,
   and that it's off until you turn it on.
+- The release script refuses a build that contains Debug-only commands, and stops if
+  Gatekeeper rejects the app.
 
 ## [0.6.0] — 2026-10-04
 

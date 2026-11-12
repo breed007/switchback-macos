@@ -141,6 +141,16 @@ final class UpdateCheckerTests: XCTestCase {
         XCTAssertTrue(fetched.isEmpty)
     }
 
+    func testTheRequestCarriesOnlyFixedHeaders() {
+        let request = UpdateChecker.request(for: UpdateCheck.product.latestReleaseAPI)
+        let headers = request.allHTTPHeaderFields ?? [:]
+        XCTAssertEqual(Set(headers.keys), ["Accept", "User-Agent", "Accept-Language"])
+        XCTAssertEqual(headers["Accept-Language"], "en", "not the user's languages")
+        XCTAssertFalse(request.httpShouldHandleCookies)
+        XCTAssertNil(request.httpBody)
+        XCTAssertEqual(request.httpMethod, "GET")
+    }
+
     func testAStoredReleaseOutsideOurRepoIsIgnored() {
         UpdatePreferences(defaults).latestKnownRelease = ("9.0.0", "https://evil.example/releases/tag/v9.0.0")
         XCTAssertNil(checker().available)

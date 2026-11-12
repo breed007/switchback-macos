@@ -70,6 +70,15 @@ for BIN in "$APP" "$HELPER"; do
 done
 echo "    helper: Developer ID, Hardened Runtime, no debug entitlement"
 
+echo "==> Checking the debug flags didn't ship"
+# DebugCommands can drive the root helper from Terminal; it's compiled only in Debug.
+# Not `strings | grep -q`: with pipefail, grep exiting at the first match kills
+# strings with SIGPIPE, and the failed pipeline reads as "not found".
+[ -f "$APP/Contents/MacOS/Switchback" ] || { echo "No binary at $APP; refusing to ship"; exit 1; }
+if grep -q -- "--helper-status" <(strings "$APP/Contents/MacOS/Switchback"); then
+  echo "Release binary contains debug flags; refusing to ship"; exit 1
+fi
+
 mkdir -p dist
 
 echo "==> Notarizing the app"
@@ -79,6 +88,10 @@ xcrun notarytool submit "$BUILD_DIR/notary-app.zip" --keychain-profile "$NOTARY_
 echo "==> Stapling the app"
 xcrun stapler staple "$APP"
 xcrun stapler validate "$APP"
+
+echo "==> Gatekeeper assessment"
+# Fatal, and before packaging, so a rejected app never reaches dist/.
+spctl -a -vv -t exec "$APP"
 
 echo "==> Packaging $ZIP (stapled app)"
 ditto -c -k --keepParent "$APP" "$ZIP"
@@ -94,7 +107,8 @@ hdiutil create -volname "Switchback" -srcfolder "$STAGE" -fs HFS+ -format UDZO -
 echo "==> Notarizing + stapling the dmg"
 xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
 xcrun stapler staple "$DMG"
-spctl -a -vv "$APP" || true
+# The dmg isn't code-signed, so spctl can't assess it; check its ticket instead.
+xcrun stapler validate "$DMG"
 
 echo "==> Done:"
 echo "    $ZIP"
