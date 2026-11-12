@@ -15,7 +15,7 @@ think the feature was removed.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/menu-dark.png">
-    <img src="docs/screenshots/menu-light.png" alt="Switchback's menu: four locations with Office checked, a line under it showing Ethernet, an address, and DNS servers, then New Location, Manage Locations, and settings items" width="440">
+    <img src="docs/screenshots/menu-light.png" alt="Switchback's menu: four locations with Office checked, a line under it showing Ethernet, an address, and DNS servers, then New Location, Manage Locations, settings items, and update checks" width="584">
   </picture>
 </p>
 
@@ -46,6 +46,12 @@ static-IP setup, that's a multi-step detour replaced by a single click.
   switch, and switches made by Shortcuts or a Focus post a notification. You can also
   keep the name in the menu bar.
 - **Launches at login**, if you want it to.
+- **Tells you about updates**, if you turn on **Check for Updates Automatically**:
+  once a day it asks GitHub for the latest release, and the menu shows "Switchback
+  0.7.1 Is Available…" when there's a newer one. Choosing it opens the release page,
+  or, if you installed with Homebrew, gives you `brew upgrade --cask switchback` to
+  copy. **Check for Updates…** asks right away. Switchback never downloads or
+  installs anything itself.
 
 <p align="center">
   <picture>
@@ -127,7 +133,9 @@ a sample device profile that:
   `com.breed007.switchback.helper`), so users never see the approval step, and
 - sets **`RequireAdminToSwitch`** in the `com.breed007.switchback` domain. `false`, the
   default, lets any local user switch; `true` requires an administrator, and other
-  users get the password prompt instead.
+  users get the password prompt instead, and
+- sets **`DisableUpdateCheck`** (0.7 and later). `true` turns the update check off
+  and removes its menu items; `false`, the default, leaves the choice to the user.
 
 The helper reads the policy only from the computer-level managed preferences
 (`/Library/Managed Preferences/com.breed007.switchback.plist`), never from settings a
@@ -171,8 +179,13 @@ Built natively in Swift and AppKit. No third-party dependencies. See
 
 ## Privacy
 
-- **No network calls, no telemetry, no analytics.** Switchback reads local system
-  configuration and changes local locations.
+- **No telemetry, no analytics.** Switchback reads local system configuration and
+  changes local locations.
+- **One network request, and only if you ask for it:** the update check. It asks
+  GitHub's API for Switchback's latest release, at most once a day when **Check for
+  Updates Automatically** is on, or when you choose **Check for Updates…**. It sends no
+  cookies and nothing about your Mac or your networks; GitHub sees your IP address,
+  as it would for any web request. It's off until you turn it on.
 - The helper and the app write to the Mac's unified log (user and location IDs, never
   location names), and nothing leaves your Mac. See [PRIVACY.md](PRIVACY.md).
 

@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
         statusController = StatusItemController()
+        UpdateChecker.shared.start()   // does nothing unless the user turned checks on
     }
 
     /// Show automated-switch notifications even while Switchback is active.

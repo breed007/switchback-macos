@@ -3,6 +3,22 @@
 All notable changes to Switchback are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.7.0] — unreleased
+
+### Added
+- **Update check, off until you turn it on.** With **Check for Updates
+  Automatically** on, Switchback asks GitHub once a day for its latest release, and
+  the menu shows "Switchback 0.7.1 Is Available…" when there's a newer one. Choosing
+  it opens the release page, or shows the Homebrew command if you installed with
+  Homebrew. **Check for Updates…** checks right away. Switchback never downloads or
+  installs anything itself.
+- A managed `DisableUpdateCheck` preference lets IT turn update checks off. The sample
+  MDM profile includes it.
+
+### Changed
+- README and PRIVACY.md describe the update check: what it requests, what it sends,
+  and that it's off until you turn it on.
+
 ## [0.6.0] — 2026-10-04
 
 This release brings Switchback's version in step with Crossbar's. The app works the

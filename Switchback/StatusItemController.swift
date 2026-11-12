@@ -42,6 +42,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             self?.monitor.reload()
             self?.locationsChanged(announce: true)
         }
+        // The update check found something, or its setting changed.
+        NotificationCenter.default.addObserver(forName: .switchbackUpdateStateChanged, object: nil, queue: .main) { [weak self] _ in
+            self?.rebuildMenu()
+        }
         locationsChanged(announce: false)
     }
 
@@ -106,6 +110,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(item(title: "Manage Locations…", action: #selector(showManageWindow)))
 
         menu.addItem(.separator())
+        if let release = MainActor.assumeIsolated({ UpdateChecker.shared.available }) {
+            menu.addItem(item(title: "\(UpdateCheck.product.displayName) \(release.version) Is Available…",
+                              action: #selector(showUpdate)))
+        }
         menu.addItem(item(title: "Network Settings…", action: #selector(openNetworkSettings)))
         switch HelperClient.status {
         case .enabled:
@@ -122,6 +130,15 @@ final class StatusItemController: NSObject, NSMenuDelegate {
                          action: #selector(toggleLaunchAtLogin))
         login.state = LoginItem.isEnabled ? .on : (LoginItem.requiresApproval ? .mixed : .off)
         menu.addItem(login)
+        let (managed, automatic) = MainActor.assumeIsolated {
+            (UpdateChecker.shared.isDisabledByPolicy, UpdateChecker.shared.isAutomatic)
+        }
+        if !managed {   // an administrator can turn update checks off (DisableUpdateCheck)
+            let automaticItem = item(title: "Check for Updates Automatically", action: #selector(toggleUpdateChecks))
+            automaticItem.state = automatic ? .on : .off
+            menu.addItem(automaticItem)
+            menu.addItem(item(title: "Check for Updates…", action: #selector(checkForUpdates)))
+        }
         menu.addItem(item(title: "Quit Switchback", action: #selector(quit), key: "q"))
     }
 
@@ -268,6 +285,43 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     @objc private func openNetworkSettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.Network-Settings.extension") {
             NSWorkspace.shared.open(url)
+        }
+    }
+
+    // MARK: - Updates (v0.7)
+
+    @objc private func toggleUpdateChecks() {
+        MainActor.assumeIsolated { UpdateChecker.shared.setAutomatic(!UpdateChecker.shared.isAutomatic) }
+    }
+
+    @objc private func showUpdate() {
+        MainActor.assumeIsolated {
+            guard let release = UpdateChecker.shared.available else { return }
+            UpdateChecker.present(release)
+        }
+    }
+
+    /// Ask GitHub now and say what it found.
+    @objc private func checkForUpdates() {
+        Task { @MainActor in
+            let outcome = await UpdateChecker.shared.checkNow()
+            let name = UpdateCheck.product.displayName
+            if case .available(let release) = outcome {
+                UpdateChecker.present(release)
+                return
+            }
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            switch outcome {
+            case .upToDate(let version):
+                alert.messageText = "\(name) is up to date"
+                alert.informativeText = "\(name) \(version) is the latest version."
+            default:
+                alert.alertStyle = .warning
+                alert.messageText = "Couldn\u{2019}t check for updates"
+                alert.informativeText = "Switchback couldn\u{2019}t reach GitHub. Try again later."
+            }
+            alert.runModal()
         }
     }
 
