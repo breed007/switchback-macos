@@ -319,7 +319,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             default:
                 alert.alertStyle = .warning
                 alert.messageText = "Couldn\u{2019}t check for updates"
-                alert.informativeText = "Switchback couldn\u{2019}t reach GitHub. Try again later."
+                alert.informativeText = "Switchback couldn\u{2019}t get the latest release from GitHub. Try again later."
             }
             alert.runModal()
         }

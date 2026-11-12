@@ -98,16 +98,38 @@ final class UpdateCheckerTests: XCTestCase {
                       policyDisabled: { policy })
     }
 
-    func testNothingIsFetchedUntilTheUserSaysYes() {
+    func testNothingIsFetchedUntilTheUserSaysYes() async {
         let updates = checker()
         XCTAssertFalse(updates.isAutomatic)
-        updates.checkIfDue()
-        updates.start()
+        // The checks run in Tasks: wait for any that started, then look.
+        let started = [updates.checkIfDue(), updates.start()].compactMap { $0 }
+        for task in started { _ = await task.value }
+        XCTAssertTrue(started.isEmpty, "no check starts before consent")
         XCTAssertTrue(fetched.isEmpty)
+
         updates.setAutomatic(false)
-        updates.checkIfDue()
+        XCTAssertNil(updates.checkIfDue())
         XCTAssertTrue(fetched.isEmpty)
         updates.stop()
+    }
+
+    func testTurningChecksOnChecksRightAway() async {
+        let updates = checker()
+        updates.setAutomatic(true)
+        guard let check = updates.checkIfDue() else { return XCTFail("a first check is always due") }
+        _ = await check.value
+        XCTAssertEqual(fetched.count, 1)
+        XCTAssertNil(updates.checkIfDue(), "not due again for a day")
+        updates.stop()
+    }
+
+    func testSimultaneousChecksShareOneRequest() async {
+        let updates = checker()
+        async let first = updates.checkNow()
+        async let second = updates.checkNow()
+        let outcomes = await [first, second]
+        XCTAssertEqual(outcomes[0], outcomes[1])
+        XCTAssertEqual(fetched.count, 1)
     }
 
     func testCheckNowFindsAndRemembersANewerRelease() async {

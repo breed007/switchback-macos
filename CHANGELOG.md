@@ -3,7 +3,7 @@
 All notable changes to Switchback are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [0.7.0] — unreleased
+## [0.7.0] — 2026-11-12
 
 ### Added
 - **Update check, off until you turn it on.** With **Check for Updates

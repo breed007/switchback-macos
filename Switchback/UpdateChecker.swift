@@ -81,6 +81,9 @@ final class UpdateChecker {
     private let policyDisabled: () -> Bool
     private let now: () -> Date
     private var timer: Timer?
+    /// The check in progress, so a second request (Check Now while the timer fires)
+    /// waits for it instead of sending another GET.
+    private var inFlight: Task<Outcome, Never>?
 
     init(preferences: UpdatePreferences = UpdatePreferences(),
          installed: UpdateCheck.Version? = nil,
@@ -118,13 +121,16 @@ final class UpdateChecker {
 
     /// Check now if one is due, then look again every hour. Does nothing unless the
     /// user turned checks on.
-    func start() {
-        guard isAutomatic else { return }
-        checkIfDue()
-        guard timer == nil else { return }
+    /// Returns the check it started, if any, so tests can wait for it.
+    @discardableResult
+    func start() -> Task<Outcome, Never>? {
+        guard isAutomatic else { return nil }
+        let check = checkIfDue()
+        guard timer == nil else { return check }
         timer = Timer.scheduledTimer(withTimeInterval: 60 * 60, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.checkIfDue() }
         }
+        return check
     }
 
     func stop() {
@@ -132,15 +138,25 @@ final class UpdateChecker {
         timer = nil
     }
 
-    func checkIfDue() {
-        guard isAutomatic, UpdateCheck.isDue(lastCheck: preferences.lastUpdateCheck, now: now()) else { return }
-        Task { await checkNow() }
+    /// Returns the check it started, or nil when none is due or checks are off.
+    @discardableResult
+    func checkIfDue() -> Task<Outcome, Never>? {
+        guard isAutomatic, UpdateCheck.isDue(lastCheck: preferences.lastUpdateCheck, now: now()) else { return nil }
+        return Task { await checkNow() }
     }
 
     /// Ask GitHub now. Check for Updates… calls this directly, whether or not
     /// scheduled checks are on; an administrator's policy still wins.
     @discardableResult
     func checkNow() async -> Outcome {
+        if let inFlight { return await inFlight.value }
+        let check = Task { await fetchLatest() }
+        inFlight = check
+        defer { inFlight = nil }
+        return await check.value
+    }
+
+    private func fetchLatest() async -> Outcome {
         guard !isDisabledByPolicy else { return .failed }
         preferences.lastUpdateCheck = now()
         guard let data = try? await fetch(UpdateCheck.product.latestReleaseAPI),
