@@ -10,6 +10,9 @@
      rule (that would approve every background item the developer signs).
   2. Sets the switching policy. false (the default) lets any local user switch
      between existing locations; true requires an administrator.
+  3. DisableUpdateCheck (0.7 and later): true turns off Switchback's update check
+     and hides its menu items. false (the default) leaves the choice to the user,
+     and the check is off until they turn it on.
 -->
 <plist version="1.0">
 <dict>
@@ -60,8 +63,10 @@
             <key>PayloadUUID</key>
             <string>6FC9C668-4B6F-499D-A8C1-C4758424E9DB</string>
             <key>PayloadDisplayName</key>
-            <string>Switchback switching policy</string>
+            <string>Switchback switching and update policy</string>
             <key>RequireAdminToSwitch</key>
+            <false/>
+            <key>DisableUpdateCheck</key>
             <false/>
         </dict>
     </array>

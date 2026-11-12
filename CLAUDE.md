@@ -26,7 +26,7 @@ overlap — see non-goals.
 
 ## Status
 
-Pre-1.0. v0.6.0 shipped 2026-10-04: the same app as v0.5.0, plus README screenshots;
+Pre-1.0. v0.7 adds an opt-in update check ([docs/v0.7-spec.md](docs/v0.7-spec.md)). v0.6.0 shipped 2026-10-04: the same app as v0.5.0, plus README screenshots;
 the version keeps step with Crossbar. The v0.5 spec, milestone results, and the list
 of what's still untested are in [docs/v0.5-spec.md](docs/v0.5-spec.md). Mirror Crossbar's
 structure and conventions where possible.
@@ -75,6 +75,13 @@ has been idle for 60 seconds; wait it out before testing helper changes. Read it
 In zsh, a bare `log` is a shell builtin and silently does nothing useful.
 Unit tests: `scripts/test.sh` (regenerates the project first; the tests need no
 privileges).
+
+**Update check (v0.7).** `UpdateCheck.swift` holds the pure rules (version compare,
+release parsing, release-page URL check, Homebrew detection, managed
+`DisableUpdateCheck`), and `UpdateChecker.swift` fetches and remembers. Opt-in, notify
+only, never installs. Crossbar has the same two files with its own `Product`; keep
+them in step (extract a package at a third app). `--update-check [version]` runs it
+from a Debug build.
 
 **README screenshots.** `scripts/screenshots.sh` (after `scripts/dev-build.sh`)
 regenerates `docs/screenshots/` in light and dark from the real UI, using the

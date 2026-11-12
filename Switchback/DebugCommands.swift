@@ -20,6 +20,7 @@ import SystemConfiguration
 ///   --menu                     print the real menu as it would open
 ///   --manage                   print the Manage Locations window's rows
 ///   --manage-sample            the same, with made-up locations covering every row kind
+///   --update-check [version]   ask GitHub for the latest release, as if this version were installed
 ///   --demo menu|manage|dialog [light|dark]
 ///                              open that UI with sample data and keep running, for
 ///                              README screenshots (scripts/screenshots.sh)
@@ -74,6 +75,23 @@ enum DebugCommands {
                 print("\(index + 1). \(loc.isCurrent ? "*" : " ") \(loc.name)  [\(loc.id)]  services: \(loc.serviceCount)  primary: \(loc.primaryService ?? "-")")
             }
             return 0
+
+        case "--update-check":
+            // Uses a throwaway preferences suite, so nothing is remembered.
+            let suite = UserDefaults(suiteName: "com.breed007.switchback.debug-update")!
+            suite.removePersistentDomain(forName: "com.breed007.switchback.debug-update")
+            let installed = args.count >= 3 ? UpdateCheck.Version(args[2]) : nil
+            let outcome: UpdateChecker.Outcome = MainActor.assumeIsolated {
+                let checker = UpdateChecker(preferences: UpdatePreferences(suite), installed: installed)
+                var result: UpdateChecker.Outcome?
+                Task { result = await checker.checkNow() }
+                while result == nil { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
+                return result!
+            }
+            print(outcome)
+            print("homebrew install: \(UpdateCheck.installedWithHomebrew())")
+            print("disabled by policy: \(UpdateCheck.disabledByPolicy(bundleID: "com.breed007.switchback"))")
+            return outcome == .failed ? 1 : 0
 
         case "--demo":
             DemoData.active = true

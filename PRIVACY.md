@@ -10,8 +10,24 @@ Switchback is a local utility. It is built so there is nothing to collect.
 - Switches, creates, renames, and deletes locations when you ask. Switching goes
   through Switchback's helper (below) if you've set it up. Everything else goes
   through the macOS authorization panel.
-- Keeps two preferences on your Mac: your location order, and whether to show the
-  location name in the menu bar.
+- Keeps a few preferences on your Mac: your location order, whether to show the
+  location name in the menu bar, and the update check's setting and last result.
+
+## Update check
+
+Switchback's only network request is its update check, and it's off until you turn
+it on:
+
+- With **Check for Updates Automatically** on, Switchback asks GitHub's API
+  (`api.github.com/repos/breed007/switchback-macos/releases/latest`) for the latest
+  release, at most once a day. **Check for Updates…** asks once, right away.
+- The request carries no cookies and nothing about your Mac, your locations, or your
+  networks. GitHub sees your IP address, as it does for any web request.
+- Switchback keeps the newest version it found, and when it last checked, in its own
+  preferences on your Mac. It never downloads or installs anything: a newer version
+  opens its release page, or shows the Homebrew command.
+- An administrator can turn the check off with the managed `DisableUpdateCheck`
+  preference.
 
 ## The helper
 
